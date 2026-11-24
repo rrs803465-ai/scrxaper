@@ -1,0 +1,31 @@
+/* Calls: full-screen call UI, callee-only visualizer stage, rooms grid. */
+#overlays { position: fixed; inset: 0; z-index: 90; pointer-events: none; } #overlays > * { pointer-events: auto; }
+.callscreen { position: fixed; inset: 0; z-index: 95; display: grid; grid-template-rows: auto 1fr auto; justify-items: center; background: radial-gradient(80% 60% at 50% 30%, rgba(40,52,74,.92), rgba(6,8,12,.97)); -webkit-backdrop-filter: blur(28px); backdrop-filter: blur(28px); color: #e8f1ff; padding: calc(24px + var(--sat)) 20px calc(26px + var(--sab)); opacity: 0; transform: scale(1.03); transition: opacity .35s var(--ease), transform .45s var(--ease); }
+.callscreen.in { opacity: 1; transform: none; }
+.cs-top { text-align: center; display: grid; gap: 4px; z-index: 3; } .cs-name { font-size: 1.5rem; font-weight: 650; } .cs-status { color: var(--muted); letter-spacing: .06em; }
+.cs-stage { position: relative; align-self: center; width: min(440px, 88vw); aspect-ratio: 1; display: grid; place-items: center; z-index: 2; }
+.cs-viz { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.cs-pfp { --s: 120px !important; width: 120px; height: 120px; font-size: 48px; z-index: 2; box-shadow: 0 0 0 4px rgba(232,241,255,.14), 0 20px 50px rgba(0,0,0,.5); will-change: transform; }
+.cs-pfp.viz-cd { box-shadow: 0 0 0 6px #0b0d10, 0 0 0 7px rgba(255,255,255,.2); } .cs-pfp.viz-cd::after { content: ""; position: absolute; width: 12px; height: 12px; border-radius: 50%; background: #0b0d10; border: 2px solid rgba(255,255,255,.35); } .cs-pfp.viz-cd { position: relative; }
+.cs-pfp.calling { animation: calling 2.4s ease-in-out infinite; } @keyframes calling { 50% { box-shadow: 0 0 0 18px rgba(232,241,255,.08), 0 0 0 38px rgba(232,241,255,.04); } }
+.cs-controls { display: flex; gap: 14px; align-items: center; justify-content: center; flex-wrap: wrap; z-index: 3; }
+.cs-controls .sq { width: 56px; height: 56px; border-radius: 18px; } .cs-controls .sq.lg { width: 64px; height: 64px; border-radius: 20px; }
+.cs-controls .green { background: linear-gradient(180deg, #b6f0d6, #5fc59a); color: #04251a; border: 0; animation: ring-wiggle 1.6s ease-in-out infinite; } @keyframes ring-wiggle { 0%, 60%, 100% { transform: rotate(0); } 70% { transform: rotate(-12deg); } 80% { transform: rotate(12deg); } 90% { transform: rotate(-8deg); } }
+.callscreen .sq.off { background: rgba(240,180,180,.22); color: #f0b4b4; }
+.cs-remote { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; z-index: 0; }
+.cs-local { position: absolute; right: 16px; bottom: calc(120px + var(--sab)); width: min(150px, 32vw); border-radius: 16px; border: 1px solid var(--line); background: #000; transform: scaleX(-1); z-index: 4; box-shadow: 0 10px 30px rgba(0,0,0,.5); }
+.callscreen.has-video .cs-stage { opacity: 0; pointer-events: none; } .callscreen.has-video .cs-top { text-shadow: 0 2px 10px #000; }
+.callscreen.ringing .cs-top .cs-name { animation: rise .6s var(--ease); }
+/* rooms */
+.callscreen.room { display: flex; flex-direction: column; justify-items: stretch; background: radial-gradient(80% 60% at 50% 0%, rgba(34,46,66,.94), rgba(6,8,12,.97)); }
+.row-top { display: flex; align-items: center; gap: 10px; text-align: left; } .row-top strong { font-size: 1.1rem; }
+.rm-grid { display: grid; gap: 12px; align-content: center; justify-content: center; padding: 14px 0; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); max-width: 1100px; width: 100%; margin: 0 auto; min-height: 0; overflow-y: auto; }
+.rm-grid[data-n="1"], .rm-grid[data-n="2"] { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+.rm-tile { position: relative; aspect-ratio: 16 / 10; border-radius: 20px; background: rgba(232,241,255,.06); border: 1px solid var(--line); display: grid; place-items: center; overflow: hidden; transition: box-shadow .2s, border-color .2s; animation: pop .35s var(--spring); }
+.rm-tile video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; } .rm-tile.has-video .rm-av { display: none; }
+.rm-tile.speaking { border-color: var(--ok); box-shadow: 0 0 0 2px var(--ok), 0 0 28px color-mix(in srgb, var(--ok) 45%, transparent); }
+.rm-name { position: absolute; left: 10px; bottom: 8px; display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; background: rgba(0,0,0,.5); font-size: .8rem; }
+.rm-music { display: flex; align-items: center; gap: 8px; justify-content: center; margin: 4px auto 0; padding: 6px 14px; border-radius: 999px; background: var(--raised); border: 1px solid var(--line); font-size: .85rem; }
+@media (max-width: 760px) { .cs-controls .sq { width: 52px; height: 52px; } .rm-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .rm-grid[data-n="1"] { grid-template-columns: 1fr; } }
+
+.callscreen.room .rm-grid { flex: 1; align-content: center; } .callscreen.room .cs-controls { padding-top: 8px; }

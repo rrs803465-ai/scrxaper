@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Scrxaper - Connect freely. Belong anywhere.</title>
+<meta name="description" content="Scrxaper is a social and messaging web app: DMs, friends, communities with voice channels, group calls, a feed with reels and stories, premade bots, an AI buddy and an installable app.">
+<meta name="theme-color" content="#0b0d10">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Scrxaper - Connect freely. Belong anywhere.">
+<meta property="og:description" content="Messaging, communities, voice and more, in one place.">
+<meta property="og:image" content="/brand/hero-glass.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="/favicon.png" type="image/png">
+<link rel="apple-touch-icon" href="/icon-192.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="stylesheet" href="/landing.css">
+<script type="module" src="/landing.js"></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="nav" id="nav">
+  <div class="wrap nav-in">
+    <a class="brand" href="/" aria-label="Scrxaper home"><img src="/logo.png" alt="" width="34" height="34"><span>Scrxaper</span></a>
+    <nav class="nav-links" aria-label="Primary">
+      <a href="#features">Features</a>
+      <a href="#communities">Communities</a>
+      <a href="#calls">Calls</a>
+      <a href="#privacy">Privacy</a>
+      <a href="#faq">FAQ</a>
+    </nav>
+    <div class="nav-cta">
+      <a class="link-btn" href="/app#login">Log in</a>
+      <a class="btn primary sm" href="/app#signup">Get started</a>
+    </div>
+  </div>
+</header>
+
+<main id="main">
+  <section class="hero wrap" aria-labelledby="hero-title">
+    <div class="hero-copy">
+      <p class="eyebrow reveal">Messaging &middot; Communities &middot; Voice</p>
+      <h1 id="hero-title" class="reveal">Connect <span class="mark">freely.</span> <span class="shimmer">Belong anywhere.</span></h1>
+      <p class="lead reveal">Scrxaper puts your DMs, friends, communities, calls and feed in one calm, glassy place. Open it in a browser, or install it like an app.</p>
+      <div class="cta-row reveal">
+        <a class="btn primary" href="/app#signup">Get started</a>
+        <a class="btn ghost" href="/app#login">Log in</a>
+        <button class="btn ghost install" type="button" data-install hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19h14"/></svg>Install app
+        </button>
+      </div>
+      <p class="fine reveal">Free to sign up. Works in any modern browser.</p>
+    </div>
+
+    <div class="hero-mock" aria-label="Product preview">
+      <img class="butterfly float-a" src="/brand/butterfly.png" alt="" width="195" height="207">
+      <div class="glass chat" id="chat" role="img" aria-label="Example chat: friends planning a call, with a voice call card">
+        <div class="chat-head">
+          <span class="pfp">A</span>
+          <div><strong>Aria</strong><small><i class="dot"></i>Online</small></div>
+          <span class="chat-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A15 15 0 0 1 3 6a2 2 0 0 1 2-2z"/></svg></span>
+        </div>
+        <div class="bubbles" id="bubbles" aria-hidden="true">
+          <div class="b them" data-b>this looks so clean</div>
+          <div class="b me" data-b>ikr. join the voice channel?</div>
+          <div class="b them" data-b>on my way</div>
+          <div class="b me" data-b>calling you now</div>
+        </div>
+        <div class="typing" id="typing" aria-hidden="true"><i></i><i></i><i></i></div>
+        <div class="composer" aria-hidden="true"><span>Type a message...</span><b></b></div>
+      </div>
+      <div class="glass callcard float-b" aria-label="Example voice call card">
+        <div class="ring-wrap">
+          <canvas id="spectrum" width="220" height="220" aria-hidden="true"></canvas>
+          <span class="ring-av">A</span>
+        </div>
+        <div class="call-meta"><strong>Aria</strong><small>Voice call &middot; 04:12</small></div>
+        <div class="call-btns" aria-hidden="true">
+          <span class="cb"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></span>
+          <span class="cb end"><svg viewBox="0 0 24 24"><path d="M3 14c5-4 13-4 18 0l-3 3-3-2v-2a10 10 0 0 0-6 0v2l-3 2z"/></svg></span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="strip wrap reveal" aria-label="Brand">
+    <img src="/brand/hero-glass.png" alt="Scrxaper: a glass butterfly above a glass lily. Connect freely. Belong anywhere." width="1254" height="423" loading="lazy">
+  </section>
+
+  <section class="sec wrap" id="features" aria-labelledby="f-title">
+    <header class="sec-head reveal">
+      <p class="eyebrow">Everything in one place</p>
+      <h2 id="f-title">One app for the way you <span class="mark">actually talk</span></h2>
+      <p class="lead">Chat one-to-one, hang out with a community, jump on a call, or just scroll the feed.</p>
+    </header>
+    <div class="grid">
+      <article class="card reveal"><span class="ico"><svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/></svg></span><h3>DMs and friends</h3><p>One-to-one and group chats, plus a friends list so you can see who is around.</p></article>
+      <article class="card reveal"><span class="ico"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="2"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="2"/></svg></span><h3>Communities</h3><p>Discord-style servers with a server bar, channels and a place for everyone.</p></article>
+      <article class="card reveal"><span class="ico"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></span><h3>Voice channels</h3><p>Drop into a voice channel to talk with your community, no scheduling needed.</p></article>
+      <article class="card reveal"><span class="ico"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="13" height="12" rx="3"/><path d="m16 10.5 5-3v9l-5-3"/></svg></span><h3>Group calls</h3><p>Voice and video calls with more than one person at a time.</p></article>
+      <article class="card reveal"><span class="ico"><svg viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="3"/><path d="m10 9 5 3-5 3zM8 3v0"/></svg></span><h3>Feed, reels and stories</h3><p>Share moments as posts, reels and stories, and add music to them.</p></article>
+      <article class="card reveal"><span class="ico"><svg viewBox="0 0 24 24"><rect x="5" y="8" width="14" height="11" rx="3"/><path d="M12 8V4M9 13h.01M15 13h.01M9 16.5h6M3 12v3M21 12v3"/></svg></span><h3>Premade bots</h3><p>Security, Music, Greeter and Fun bots ready to add to your community.</p></article>
+      <article class="card reveal"><span class="ico"><svg viewBox="0 0 24 24"><path d="M12 3l1.800 5.200L19 10l-5.200 1.800L12 17l-1.800-5.200L5 10l5.200-1.800zM19 16l.8 2.200L22 19l-2.200.8L19 22l-.8-2.200L16 19l2.200-.8z"/></svg></span><h3>AI buddy</h3><p>A built-in AI companion you can chat with whenever you want a hand.</p></article>
+      <article class="card reveal"><span class="ico"><svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18c1.5 0 2-1 1.5-2.200-.5-1.200.300-2.300 1.600-2.300H17a4 4 0 0 0 4-4c0-5-4-9.5-9-9.5z"/><circle cx="7.5" cy="11" r="1"/><circle cx="11" cy="7.5" r="1"/><circle cx="15.5" cy="8.5" r="1"/></svg></span><h3>Studio customization</h3><p>Make it yours with themes and appearance options in Studio.</p></article>
+      <article class="card reveal"><span class="ico"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="3"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></span><h3>Secret chats</h3><p>Optional end-to-end-encrypted 1:1 text chats. See the honest details below.</p></article>
+    </div>
+  </section>
+
+  <section class="sec wrap split" id="communities" aria-labelledby="c-title">
+    <div class="copy reveal">
+      <p class="eyebrow">Communities</p>
+      <h2 id="c-title">Build a place that <span class="mark">feels like yours</span></h2>
+      <p class="lead">A familiar server bar on the left, channels beside it, and voice channels one click away. Invite your people and start talking.</p>
+      <ul class="ticks">
+        <li>Text and voice channels in every community</li>
+        <li>Add premade bots for greeting, music and moderation</li>
+        <li>Hop between communities from the server bar</li>
+      </ul>
+    </div>
+    <div class="glass servermock reveal" role="img" aria-label="Mock community with server bar, channel list and messages">
+      <div class="sbar" aria-hidden="true">
+        <span class="sv on">S</span><span class="sv">G</span><span class="sv">M</span><span class="sv">D</span><span class="sv add">+</span>
+      </div>
+      <div class="chan" aria-hidden="true">
+        <strong>Night Owls</strong>
+        <small>Text</small>
+        <span class="ch on"># general</span><span class="ch"># music-share</span><span class="ch"># art</span>
+        <small>Voice</small>
+        <span class="ch vc"><svg viewBox="0 0 24 24"><path d="M4 10v4h3l5 4V6L7 10zM16 9a4 4 0 0 1 0 6"/></svg>Lounge <em>3</em></span>
+        <span class="ch vc"><svg viewBox="0 0 24 24"><path d="M4 10v4h3l5 4V6L7 10zM16 9a4 4 0 0 1 0 6"/></svg>Game night</span>
+      </div>
+      <div class="msgs" aria-hidden="true">
+        <div class="m"><span class="pfp s">N</span><p><b>Nova</b>who is up for a call tonight?</p></div>
+        <div class="m"><span class="pfp s">Z</span><p><b>Zynx</b>me. starting the music bot</p></div>
+        <div class="m bot"><span class="pfp s">B</span><p><b>Greeter <i>BOT</i></b>Welcome to the server, Kai.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec wrap split rev" id="calls" aria-labelledby="p-title">
+    <div class="glass phone reveal">
+      <img src="/brand/board-app-glass.png" alt="Scrxaper app boards: server bar, conversation list, chat thread and the mobile sign-in screen" width="1254" height="567" loading="lazy">
+    </div>
+    <div class="copy reveal">
+      <p class="eyebrow">Calls and app</p>
+      <h2 id="p-title">Calls that <span class="mark">find you</span></h2>
+      <p class="lead">Start a voice or video call from any chat, or join a group call. Install Scrxaper as a PWA and get incoming-call alerts, with an app icon on your home screen or desktop.</p>
+      <ul class="ticks">
+        <li>One-to-one and group calls</li>
+        <li>Installable on supported browsers</li>
+        <li>Incoming-call alerts from the installed app</li>
+      </ul>
+      <button class="btn ghost install" type="button" data-install hidden>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19h14"/></svg>Install app
+      </button>
+    </div>
+  </section>
+
+  <section class="sec wrap" id="studio" aria-labelledby="s-title">
+    <div class="glass band reveal">
+      <div class="copy">
+        <p class="eyebrow">Studio</p>
+        <h2 id="s-title">Make it <span class="mark">yours</span></h2>
+        <p class="lead">Studio is where you customize how Scrxaper looks and feels, so your space reflects you.</p>
+      </div>
+      <div class="swatches" aria-hidden="true">
+        <span class="sw a"></span><span class="sw b"></span><span class="sw c"></span><span class="sw d"></span><span class="sw e"></span>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec wrap" id="bots" aria-labelledby="b-title">
+    <header class="sec-head reveal">
+      <p class="eyebrow">Bots and AI</p>
+      <h2 id="b-title">Helpers that are <span class="mark">ready on day one</span></h2>
+      <p class="lead">Four premade bots, plus an AI buddy for one-on-one chats.</p>
+    </header>
+    <div class="grid four">
+      <article class="card reveal"><span class="ico"><svg viewBox="0 0 24 24"><path d="M12 3 5 6v5c0 4.5 3 8 7 10 4-2 7-5.5 7-10V6z"/><path d="m9 12 2 2 4-4"/></svg></span><h3>Security</h3><p>Keep your community tidy and protected.</p></article>
+      <article class="card reveal"><span class="ico"><svg viewBox="0 0 24 24"><path d="M9 18V6l11-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="17.5" cy="16" r="2.5"/></svg></span><h3>Music</h3><p>Set the mood for your voice channels.</p></article>
+      <article class="card reveal"><span class="ico"><svg viewBox="0 0 24 24"><path d="M7 11V5a1.5 1.5 0 0 1 3 0v5M10 10V4a1.5 1.5 0 0 1 3 0v6M13 10V5.5a1.5 1.5 0 0 1 3 0V12M16 9.5a1.5 1.5 0 0 1 3 0V15c0 4-2.5 6-6 6-3 0-4.5-1.5-6-4l-2-3a1.5 1.5 0 0 1 2.5-1.5L7 14"/></svg></span><h3>Greeter</h3><p>Welcome new members the moment they join.</p></article>
+      <article class="card reveal"><span class="ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8.5 14.5a4.5 4.5 0 0 0 7 0M9 9.5h.01M15 9.5h.01"/></svg></span><h3>Fun</h3><p>Games and small surprises for the chat.</p></article>
+    </div>
+  </section>
+
+  <section class="sec wrap" id="privacy" aria-labelledby="pv-title">
+    <div class="glass privacy reveal">
+      <p class="eyebrow">Honest privacy</p>
+      <h2 id="pv-title">What is protected, and <span class="mark">what is not</span></h2>
+      <div class="pv-grid">
+        <div><h3>In transit</h3><p>Connections to Scrxaper use TLS, so traffic between your device and the server is encrypted on the way.</p></div>
+        <div><h3>Secret chats (optional)</h3><p>1:1 text chats can be end-to-end encrypted, so the server cannot read them. They do not have forward secrecy.</p></div>
+        <div><h3>Everything else</h3><p>Everything outside secret chats, including regular DMs, communities, calls metadata and the feed, is readable by the server.</p></div>
+      </div>
+      <p class="fine">We would rather tell you plainly than overpromise. Secret chats are text only and one-to-one.</p>
+    </div>
+  </section>
+
+  <section class="sec wrap narrow" id="faq" aria-labelledby="q-title">
+    <header class="sec-head reveal">
+      <p class="eyebrow">FAQ</p>
+      <h2 id="q-title">Questions, <span class="mark">answered</span></h2>
+    </header>
+    <div class="faq reveal">
+      <details><summary>What is Scrxaper?</summary><p>A social and messaging web app with DMs, friends, communities, voice channels, group calls, and a feed with reels and stories.</p></details>
+      <details><summary>Can I install it?</summary><p>Yes. On supported browsers an Install app button appears on this page, and you can install Scrxaper as a PWA with incoming-call alerts.</p></details>
+      <details><summary>Are my messages end-to-end encrypted?</summary><p>Only if you use a secret chat, which is optional, 1:1 and text only, without forward secrecy. Other content is readable by the server. Traffic is protected by TLS in transit.</p></details>
+      <details><summary>What bots are included?</summary><p>Four premade bots: Security, Music, Greeter and Fun.</p></details>
+      <details><summary>What is the AI buddy?</summary><p>A built-in AI companion you can chat with from inside the app.</p></details>
+      <details><summary>How do I customize it?</summary><p>Open Studio in the app to change how Scrxaper looks.</p></details>
+    </div>
+  </section>
+
+  <section class="sec wrap" aria-labelledby="cta-title">
+    <div class="glass final reveal">
+      <img class="butterfly float-a" src="/brand/butterfly.png" alt="" width="195" height="207" loading="lazy">
+      <h2 id="cta-title">Ready to <span class="shimmer">belong</span>?</h2>
+      <p class="lead">Create your account and bring your people.</p>
+      <div class="cta-row center">
+        <a class="btn primary" href="/app#signup">Get started</a>
+        <a class="btn ghost" href="/app#login">Log in</a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="foot">
+  <div class="wrap foot-in">
+    <a class="brand" href="/" aria-label="Scrxaper home"><img src="/logo.png" alt="" width="28" height="28"><span>Scrxaper</span></a>
+    <p>Every conversation. One place.</p>
+    <nav aria-label="Footer">
+      <a href="/app#signup">Get started</a><a href="/app#login">Log in</a><a href="#privacy">Privacy</a><a href="#faq">FAQ</a>
+    </nav>
+  </div>
+</footer>
+</body>
+</html>

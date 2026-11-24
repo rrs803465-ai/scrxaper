@@ -1,0 +1,51 @@
+plugins {
+    id 'com.android.application'
+}
+
+// Build with:  gradle assembleDebug -PserverUrl=https://your-scrxaper.example.com
+def serverUrl = (project.findProperty('serverUrl') ?: '').toString().trim().replaceAll('/+$', '')
+def cleartext = (project.findProperty('cleartext') ?: 'false').toString()
+def ksFile = System.getenv('KEYSTORE_FILE')
+def vCode = (project.findProperty('versionCode') ?: '1').toString() as Integer
+def vName = (project.findProperty('versionName') ?: '1.0.0').toString()
+
+android {
+    namespace 'app.scrxaper.mobile'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'app.scrxaper.mobile'
+        minSdk 26
+        targetSdk 34
+        versionCode vCode
+        versionName vName
+        buildConfigField 'String', 'SERVER_URL', "\"${serverUrl}\""
+        manifestPlaceholders = [cleartext: cleartext]
+    }
+
+    buildFeatures { buildConfig true }
+
+    signingConfigs {
+        release {
+            if (ksFile) {
+                storeFile file(ksFile)
+                storePassword System.getenv('KEYSTORE_PASSWORD')
+                keyAlias System.getenv('KEY_ALIAS')
+                keyPassword System.getenv('KEY_PASSWORD')
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            if (ksFile) signingConfig signingConfigs.release
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    lint { abortOnError false }
+}
