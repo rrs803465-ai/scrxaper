@@ -29,14 +29,24 @@ Copy `.env.example` for configuration. Set `OWNER_USERNAME` and `OWNER_PASSWORD`
 | Site roles | Owner badge. The owner can make admins (full site power) and staff (minimal). Owner and admins can give Sparks. |
 | Bans | A suspended person gets a popup with the reason; login shows it too. |
 | Secret chats | Opt-in end-to-end encrypted text (ECDH P-256 + AES-GCM). |
-| Installable | Web app manifest and service worker. |
+| Installable | Web app manifest and service worker. Landing page and Studio link to the Android APK at `/download/android` (set `APK_URL`). |
 
 ## Calls when the screen is off
 
 Two ways, depending on how the app is installed:
 
-- **Android app (recommended):** `android/` is a native shell built by GitHub Actions (`.github/workflows/android.yml`, instructions in `android/README.md`). A background service rings your own ringtone on the ringer volume, vibrates and lights the lock screen with Answer and Decline, with the app closed.
+- **Android app (recommended):** download it from the landing page (set `APK_URL`, see below); `android/` is a native shell built by GitHub Actions (`.github/workflows/android.yml`, instructions in `android/README.md`). A background service rings your own ringtone on the ringer volume, vibrates and lights the lock screen with Answer and Decline, with the app closed.
 - **Installed web app (PWA):** Web Push shows a persistent "calling" notification that the server repeats every 4 seconds while it rings, so the phone keeps playing its notification sound and vibrating. Browsers cannot play your own audio from a closed web app, so this uses the phone's notification sound.
+
+### Offering the APK on the website
+
+The workflow publishes `scrxaper.apk` to a GitHub Release (tag `android-latest` for manual runs, the tag name for `v*` pushes). The repo must be public for visitors to download it. Set on the server:
+
+```
+APK_URL=https://github.com/<owner>/<repo>/releases/download/android-latest/scrxaper.apk
+```
+
+`/download/android` then redirects there; without `APK_URL` it answers 404 and the buttons just show that message.
 
 ## Verification status
 
@@ -51,5 +61,5 @@ Two ways, depending on how the app is installed:
 - Calls behind strict NATs need a TURN server (`TURN_URL`).
 - Secret chats: keys are static per browser (no forward secrecy), text only; files and metadata are not hidden.
 - The video editor re-encodes in the browser with MediaRecorder; browsers without it keep the original file.
-- The Android app (`android/`) and the Electron scaffold (`native/`) have not been compiled or run. See `android/README.md`.
+- The Android app (`android/`) compiles on GitHub Actions but has not been run on a real phone. The Electron scaffold (`native/`) has not been compiled or run. See `android/README.md`.
 - Buddy needs each person's own Groq key.
