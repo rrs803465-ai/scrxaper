@@ -445,3 +445,11 @@ test('call/pending returns the ringing call for the callee only, and nothing onc
   await t.call('POST', '/api/call/answer', { call: data.id }, b);
   assert.equal((await t.call('GET', '/api/call/pending', null, b)).data, null);
 });
+
+test('download/android redirects to APK_URL, and 404s when it is not set', async () => {
+  const off = await boot();
+  assert.equal((await fetch(off.base + '/download/android', { redirect: 'manual' })).status, 404);
+  const on = await boot({ apkUrl: 'https://github.com/o/r/releases/download/android-latest/scrxaper.apk' });
+  const r = await fetch(on.base + '/download/android', { redirect: 'manual' });
+  assert.equal(r.status, 302); assert.match(r.headers.get('location'), /scrxaper\.apk$/);
+});
