@@ -1,5 +1,10 @@
 name: Android app
 
+# Builds the Scrxaper Android app (APK).
+#  - Run it by hand: Actions tab, "Android app", Run workflow, and type your server address.
+#  - Or push a tag such as v1.0.0 and the APK is attached to a GitHub Release.
+# For an APK that can be updated in place, add the four signing secrets described in android/README.md.
+
 on:
   workflow_dispatch:
     inputs:
@@ -27,6 +32,7 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      # The runner image already ships the Android SDK. Accept licenses and make sure API 34 is present.
       - name: Prepare Android SDK
         run: |
           export ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
@@ -39,6 +45,10 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
+
+      - name: Check server address
+        run: |
+          if [ -z "$SERVER_URL" ]; then echo "::warning::No server address given. The app will ask for it on first launch."; fi
 
       - name: Build signed release APK
         if: env.HAS_KEYSTORE == 'true'
@@ -63,8 +73,12 @@ jobs:
           name: scrxaper-apk
           path: scrxaper.apk
 
-      - name: Attach to release
-        if: startsWith(github.ref, 'refs/tags/v')
+      # Publishes a stable public link:  https://github.com/OWNER/REPO/releases/latest/download/scrxaper.apk  (tags v*)
+      # or                              https://github.com/OWNER/REPO/releases/download/android-latest/scrxaper.apk  (manual runs)
+      - name: Publish to a GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'android-latest' }}
+          name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'Android app (latest build)' }}
           files: scrxaper.apk
+          overwrite_files: true
