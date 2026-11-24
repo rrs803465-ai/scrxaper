@@ -1,10 +1,5 @@
 name: Android app
 
-# Builds the Scrxaper Android app (APK).
-#  - Run it by hand: Actions tab, "Android app", Run workflow, and type your server address.
-#  - Or push a tag such as v1.0.0 and the APK is attached to a GitHub Release.
-# For an APK that can be updated in place, add the four signing secrets described in android/README.md.
-
 on:
   workflow_dispatch:
     inputs:
@@ -32,15 +27,18 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - uses: android-actions/setup-android@v3
+      - name: Prepare Android SDK
+        run: |
+          export ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          SDKM="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          [ -x "$SDKM" ] || SDKM="$(ls -d $ANDROID_SDK_ROOT/cmdline-tools/*/bin/sdkmanager | head -1)"
+          yes | "$SDKM" --licenses > /dev/null || true
+          "$SDKM" "platforms;android-34" "build-tools;34.0.0" || true
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > android/local.properties
 
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
-
-      - name: Check server address
-        run: |
-          if [ -z "$SERVER_URL" ]; then echo "::warning::No server address given. The app will ask for it on first launch."; fi
 
       - name: Build signed release APK
         if: env.HAS_KEYSTORE == 'true'
