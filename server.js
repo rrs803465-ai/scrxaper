@@ -138,6 +138,7 @@ export function createApp({
   aiKeySecret = process.env.AI_KEY_SECRET,
   uploadDir = process.env.UPLOAD_DIR || './data/uploads',
   groqBase = process.env.GROQ_BASE_URL || 'https://api.groq.com/openai/v1',
+  apkUrl = process.env.APK_URL,
 } = {}) {
   if (dbPath !== ':memory:') {
     mkdirSync(path.dirname(dbPath), { recursive: true });
@@ -2552,6 +2553,11 @@ export function createApp({
 
 
   const serveStatic = async (res, pathname, viewer) => {
+    if (pathname === '/download/android') {
+      if (!apkUrl || !/^https:\/\//.test(apkUrl)) throw new HttpError(404, 'The Android app has not been published yet.');
+      res.writeHead(302, { Location: apkUrl, 'Cache-Control': 'no-store' });
+      return res.end();
+    }
     let file = path.normalize(pathname);
     if (file === '/' ) file = viewer ? '/index.html' : '/landing.html';
     if (file === '/app' || file === '/app/') file = '/index.html';
