@@ -128,7 +128,7 @@ const SECTIONS = {
         h('div', { class: 'inline wrap' }, ...(st.supported && !st.subscribed ? [h('button', { class: 'primary', type: 'button', onclick: safe(async () => { const r = await actions.enablePush(); if (r !== 'granted') toast(r === 'denied' ? 'Notifications are blocked.' : 'Not enabled.', { kind: 'error' }); else toast('Enabled', { kind: 'ok' }); paint(); }) }, icon('bell', 16), 'Turn on notifications')] : []),
           ...(st.subscribed ? [h('button', { class: 'ghost', type: 'button', onclick: safe(async () => { await actions.disablePush(); paint(); }) }, 'Turn off')] : [])),
         hint('Incoming calls show a persistent Calling notification with Answer and Decline, and repeat every few seconds while it rings so your phone keeps playing its notification sound and vibration, even with the screen off. Browsers cannot play your custom ringtone from a closed app: it plays as soon as the app is open. Set your phone’s notification sound for Scrxaper to a loud ringing tone in system settings.')),
-        section('Install the app', install, hint('Installed, Scrxaper opens like an app and can ring from the background.')),
+        section('Install the app', install, h('a', { class: 'btn ghost', href: '/download/android', rel: 'noopener' }, icon('download', 16), ' Get the Android app'), hint('The Android app rings your own ringtone with the screen off. The installed web app uses the phone\u2019s notification sound.')),
         section('Sounds in the app', toggle('x', 'Do not disturb', state.privacy.dnd, safe(async (v) => { state.privacy = await api('/api/privacy', { body: { whoCanMessage: state.privacy.whoCanMessage, previews: state.privacy.previews, dnd: v, private: !!state.prefs.private } }); }))));
     };
     await paint();
