@@ -1,0 +1,63 @@
+name: Windows app (.exe)
+
+# Builds the Scrxaper desktop app: an installer (Scrxaper-Setup) and a portable .exe that needs no install.
+# Run it from the Actions tab: "Run workflow". The finished files are attached to a public release named windows-latest.
+on:
+  workflow_dispatch:
+    inputs:
+      server_url:
+        description: "Your Scrxaper address, for example https://chat.example.com (people can also type it in the app)"
+        required: false
+        default: ""
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Bake in the server address
+        shell: bash
+        working-directory: native/electron
+        env:
+          SERVER_URL: ${{ github.event.inputs.server_url || vars.SERVER_URL || '' }}
+        run: |
+          node -e "require('fs').writeFileSync('config.json', JSON.stringify({ url: process.env.SERVER_URL || '' }))"
+
+      - name: Install
+        working-directory: native/electron
+        run: npm install --no-audit --no-fund
+
+      - name: Build installer and portable exe
+        working-directory: native/electron
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: npm run dist
+
+      - name: List what was built
+        shell: bash
+        run: ls -la native/electron/dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: scrxaper-windows
+          path: |
+            native/electron/dist/*.exe
+          if-no-files-found: error
+
+      - name: Publish to a GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && format('{0}-windows', github.ref_name) || 'windows-latest' }}
+          name: ${{ startsWith(github.ref, 'refs/tags/v') && format('{0} (Windows)', github.ref_name) || 'Windows app (latest build)' }}
+          files: native/electron/dist/*.exe
+          overwrite_files: true

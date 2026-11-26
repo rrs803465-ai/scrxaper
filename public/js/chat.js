@@ -1,5 +1,5 @@
 // Conversation pane: header, message log, bubbles, composer, uploads, secret (end-to-end) chats.
-import { $, state, bus, actions, h, clear, icon, sq, avatarEl, roleTag, api, upload, toast, fail, ask, openSheet, closeSheets, timeOf, dayOf, fmtBytes, fileUrl, linkify, ping, playSound, BUILTIN_TONES, toggle, select, form, field, section, hint, row, empty, debounce } from './core.js';
+import { $, state, bus, actions, h, clear, icon, sq, avatarEl, roleTag, clanChip, viewImage, downloadFile, api, upload, toast, fail, ask, openSheet, closeSheets, timeOf, dayOf, fmtBytes, fileUrl, linkify, ping, playSound, BUILTIN_TONES, toggle, select, form, field, section, hint, row, empty, debounce } from './core.js';
 import * as e2ee from '../e2ee.js';
 
 const main = () => $('main');
@@ -138,7 +138,7 @@ function paintHeader() {
   if (view.kind === 'dm') { av = avatarEl(d.peer.avatar, d.peer.display_name, 38); sub = d.peer.status || `@${d.peer.username}`; }
   else if (view.kind === 'group') { av = avatarEl(d.group.icon, d.group.name, 38, true); sub = `${d.members.length} members${d.bots?.length ? ` · ${d.bots.length} bots` : ''}`; }
   else { av = h('span', { class: 'pfp icon', style: { '--s': '38px' } }, icon('hash', 18)); sub = d.channel.topic || (d.channel.kind === 'announcement' ? 'Announcements' : 'Text channel'); }
-  clear(els.who, av, h('span', { class: 'grow' }, h('strong', {}, view.kind === 'channel' ? view.name.slice(1) : view.name, view.kind === 'dm' ? roleTag(d.peer.tag) : null), h('small', {}, sub)));
+  clear(els.who, av, h('span', { class: 'grow' }, h('strong', {}, view.kind === 'channel' ? view.name.slice(1) : view.name, view.kind === 'dm' ? roleTag(d.peer.tag) : null, view.kind === 'dm' ? clanChip(d.peer.clan) : null), h('small', {}, sub)));
   const acts = [];
   const online = (k) => actions.currentRoom?.() === k;
   if (view.kind === 'dm' && view.canPost) {
@@ -232,7 +232,7 @@ function renderMessage(m, prev) {
   const name = m.name ?? view.data?.peer?.display_name ?? m.from;
   const kindCls = m.kind === 'announcement' ? ' card-announce' : m.kind === 'card' || m.kind === 'birthday' ? ' birthday' : '';
   const body = h('div', { class: `bub${kindCls}` });
-  if (!mine && view.kind !== 'dm') body.append(h('span', { class: 'who', onclick: open }, name, roleTag(m.tag ?? (m.is_bot ? 'bot' : null))));
+  if (!mine && view.kind !== 'dm') body.append(h('span', { class: 'who', onclick: open }, name, roleTag(m.tag ?? (m.is_bot ? 'bot' : null)), clanChip(m.clan)));
   if (m.file) body.append(fileBlock(m));
   else if (m.attachment) body.append(fileBlock({ attachment: m.attachment, file: { kind: 'image', name: 'Attachment', mime: 'image/png', size: 0 } }));
   if (m.kind === 'post' && m.meta) body.append(postCard(m.meta));
@@ -244,6 +244,10 @@ function renderMessage(m, prev) {
   const acts = h('div', { class: 'm-acts' });
   if (m.body && m.kind !== 'e2ee') acts.append(sq('file', 'Copy text', { class: 'ghost', onclick: () => navigator.clipboard?.writeText(m.body).then(() => toast('Copied')) }));
   if (view.kind === 'channel' && (mine || view.canModerate)) acts.append(sq('trash', 'Delete message', { class: 'ghost', onclick: async () => { if (await ask.confirm('Delete this message?', { yes: 'Delete', danger: true })) api('/api/channel-message-delete', { body: { channel: view.id, id: m.id } }).catch(fail); } }));
+  const del = (kind, path, payload) => acts.append(sq('trash', 'Delete message', { class: 'ghost', onclick: async () => { if (await ask.confirm('Delete this message for everyone?', { yes: 'Delete', danger: true })) api(path, { body: payload }).catch(fail); } }));
+  if (view.kind === 'dm' && mine && m.id && !SYSTEM.has(m.kind)) del('dm', '/api/message-delete', { with: view.id, id: m.id });
+  if (view.kind === 'group' && m.id && (mine || view.data?.role === 'admin')) del('group', '/api/group-message-delete', { group: view.id, id: m.id });
+  if (m.file?.kind === 'image' && m.attachment) acts.append(sq('download', 'Download image', { class: 'ghost', onclick: () => downloadFile(fileUrl(m.attachment), m.file.name || 'image.png') }));
   const slot = mine || view.kind === 'dm' && !cont ? null : null;
   const avatar = !mine ? (cont ? h('span', { class: 'pfp-slot' }) : Object.assign(avatarEl(m.avatar ?? view.data?.peer?.avatar, name, 34), { onclick: open })) : null;
   if (avatar && !cont) avatar.classList.add('clickable');
@@ -254,12 +258,11 @@ function renderMessage(m, prev) {
 
 function fileBlock(m) {
   const f = m.file; const url = fileUrl(m.attachment);
-  if (f.kind === 'image') { const img = h('img', { class: 'shot', src: url, alt: f.name, loading: 'lazy' }); img.addEventListener('load', () => scrollEnd()); img.addEventListener('click', () => lightbox(url, f.name)); return img; }
+  if (f.kind === 'image') { const img = h('img', { class: 'shot', src: url, alt: f.name, loading: 'lazy' }); img.addEventListener('load', () => scrollEnd()); img.addEventListener('click', () => viewImage(url, f.name)); return img; }
   if (f.kind === 'video') return h('video', { class: 'shot', src: url, controls: true, preload: 'metadata', playsInline: true });
   if (f.kind === 'audio') return h('audio', { src: url, controls: true, preload: 'none', style: { width: '240px', maxWidth: '100%' } });
   return h('a', { class: 'fcard', href: url, download: f.name, rel: 'noopener' }, h('span', { class: 'fi' }, icon('file', 20)), h('span', { class: 'grow' }, h('span', { class: 'fn' }, f.name), h('small', {}, fmtBytes(f.size))), icon('download', 18));
 }
-function lightbox(url, name) { openSheet(name, h('img', { src: url, alt: name, style: { width: '100%', borderRadius: '14px' } }), { wide: true }); }
 function postCard(meta) {
   const media = meta.mk === 'reel' ? h('video', { src: fileUrl(meta.media), muted: true, preload: 'metadata', playsInline: true }) : h('img', { src: fileUrl(meta.media), alt: '', loading: 'lazy' });
   return h('button', { type: 'button', class: 'pcard', onclick: () => actions.openPost?.(meta.post) }, media, h('div', { class: 'pc-b' }, h('b', {}, meta.name ?? meta.by), h('span', {}, meta.cap || 'Shared a post')));
@@ -379,6 +382,8 @@ export function initChat() {
     incoming('dm', peer, { ...m, mine: m.from === state.user, name: m.name }, m.name);
   });
   bus.on('sse:channel-message', (m) => incoming('channel', m.channel, { ...m, mine: m.from === state.user }, m.name));
+  bus.on('sse:message-delete', (m) => { if (view.kind === 'dm' && view.id === m.peer) { els.log?.querySelector(`[data-id="${m.id}"]`)?.remove(); view.msgs = view.msgs.filter((x) => x.id !== m.id); } refresh(); });
+  bus.on('sse:group-message-delete', (m) => { if (view.kind === 'group' && view.id === m.group) { els.log?.querySelector(`[data-id="${m.id}"]`)?.remove(); view.msgs = view.msgs.filter((x) => x.id !== m.id); } });
   bus.on('sse:channel-delete', (m) => { if (view.kind === 'channel' && view.id === m.channel) { els.log?.querySelector(`[data-id="${m.id}"]`)?.remove(); view.msgs = view.msgs.filter((x) => x.id !== m.id); } });
   bus.on('sse:group', (g) => { if (view.kind === 'group' && view.id === g.id) actions.refreshThread?.(); refresh(); });
   bus.on('sse:community', (c) => { if (view.kind === 'channel' && view.data?.channel.communityId === c.id) open('channel', view.id).catch(() => {}); });

@@ -100,7 +100,7 @@ export function editVideo(file) {
     const range = (key, label) => h('label', { class: 'field' }, label, h('input', { type: 'range', min: 0, max: 100, step: 0.1, value: 0, 'aria-label': label, oninput: (e) => { st[key] = Number(e.target.value); if (st.end < st.start + 0.5) { if (key === 'start') st.end = Math.min(st.start + 0.5, v.duration); else st.start = Math.max(st.end - 0.5, 0); sync(); } v.currentTime = key === 'start' ? st.start : Math.max(st.end - 0.3, 0); describe(); v.style.filter = CSS_FILTERS[st.filter]; } }));
     const sRange = range('start', 'Trim start'); const eRange = range('end', 'Trim end');
     const sync = () => { sRange.querySelector('input').value = st.start; eRange.querySelector('input').value = st.end; };
-    const describe = () => { const len = (st.end - st.start) / st.speed; info.textContent = `Clip length ${fmtDur(Math.max(len, 0))}${len > 60 ? ' (over the 60 s limit, trim more)' : ''}`; info.style.color = len > 60 ? 'var(--danger)' : ''; };
+    const describe = () => { const len = (st.end - st.start) / st.speed; info.textContent = `Clip length ${fmtDur(Math.max(len, 0))}${len > MAX_SEC ? ` (over the ${MAX_SEC / 60} minute limit, trim more)` : ''}`; info.style.color = len > MAX_SEC ? 'var(--danger)' : ''; };
     const chips = Object.keys(CSS_FILTERS).map((n) => h('button', { type: 'button', class: `chip${n === st.filter ? ' on' : ''}`, onclick: (e) => { st.filter = n; chips.forEach((c) => c.classList.toggle('on', c === e.currentTarget)); v.style.filter = CSS_FILTERS[n]; } }, n));
     const exportBtn = h('button', { class: 'primary', type: 'button', onclick: exportClip }, 'Done');
     const ov = overlay('Edit video', v, sRange, eRange, info,
@@ -110,24 +110,24 @@ export function editVideo(file) {
     ov.x.onclick = () => { cancelled = true; recorder?.state === 'recording' && recorder.stop(); done(null); };
     v.addEventListener('loadedmetadata', async () => {
       if (v.duration === Infinity) { v.currentTime = 1e7; await new Promise((r) => v.addEventListener('timeupdate', r, { once: true })); v.currentTime = 0; }
-      st.end = Math.min(v.duration, 60); for (const r of [sRange, eRange]) r.querySelector('input').max = v.duration;
+      st.end = Math.min(v.duration, MAX_SEC); for (const r of [sRange, eRange]) r.querySelector('input').max = v.duration;
       eRange.querySelector('input').value = st.end; describe();
     });
     v.addEventListener('error', () => { toast('That video could not be read.', { kind: 'error' }); done(null); });
     v.addEventListener('timeupdate', () => { if (!v.paused && v.currentTime >= st.end) v.pause(); });
     async function exportClip() {
       const len = (st.end - st.start) / st.speed;
-      if (len > 60) return toast('Reels can be up to 60 seconds. Trim the clip.', { kind: 'error' });
-      const untouched = st.start === 0 && st.end >= v.duration - 0.2 && st.speed === 1 && !st.mute && st.filter === 'Original';
+      if (len > MAX_SEC) return toast('Videos can be up to 3 minutes. Trim the clip.', { kind: 'error' });
+      const untouched = file.size < 100 * 1048576 && st.start === 0 && st.end >= v.duration - 0.2 && st.speed === 1 && !st.mute && st.filter === 'Original';
       if (untouched) return done(file);
       const mime = pickMime();
       if (!mime || !HTMLCanvasElement.prototype.captureStream) return toast('This browser cannot re-encode video. Trim and filters are unavailable here; the original can still be posted.', { kind: 'error', ms: 6000 });
       exportBtn.disabled = true; bar.hidden = false; const fill = bar.firstChild;
-      const scale = Math.min(1, 720 / Math.max(v.videoWidth, v.videoHeight)); const c = document.createElement('canvas'); c.width = Math.round(v.videoWidth * scale); c.height = Math.round(v.videoHeight * scale);
+      const scale = Math.min(1, 1080 / Math.max(v.videoWidth, v.videoHeight)); const c = document.createElement('canvas'); c.width = Math.round(v.videoWidth * scale); c.height = Math.round(v.videoHeight * scale);
       const g = c.getContext('2d'); g.filter = CSS_FILTERS[st.filter];
       const out = c.captureStream(30);
       let ctx; if (!st.mute) { try { ctx = new AudioContext(); const src = ctx.createMediaElementSource(v); const dest = ctx.createMediaStreamDestination(); src.connect(dest); dest.stream.getAudioTracks().forEach((t) => out.addTrack(t)); } catch { /* video only */ } }
-      const chunks = []; recorder = new MediaRecorder(out, { mimeType: mime, videoBitsPerSecond: 2500000 });
+      const chunks = []; recorder = new MediaRecorder(out, { mimeType: mime, videoBitsPerSecond: 3500000 });
       recorder.ondataavailable = (e) => e.data.size && chunks.push(e.data);
       recorder.onstop = () => { v.pause(); ctx?.close(); if (cancelled) return; done(new Blob(chunks, { type: mime.split(';')[0] })); };
       v.muted = st.mute; v.playbackRate = st.speed; v.currentTime = st.start; await new Promise((r) => v.addEventListener('seeked', r, { once: true }));
@@ -137,6 +137,8 @@ export function editVideo(file) {
     }
   });
 }
+
+const MAX_SEC = 180; // posts and reels: up to 3 minutes
 
 /* ------------------------------------------------------------------ composer: post, story, reel */
 async function compose(kind, blob, after) {
@@ -158,6 +160,9 @@ async function compose(kind, blob, after) {
     } catch (e) { fail(e); go.disabled = false; prog.hidden = true; }
   });
 }
-export const newPost = () => pickFile('image/png,image/jpeg,image/webp,image/gif', async (file) => { const b = await editImage(file); if (b) compose('post', b, () => actions.openFeed?.('feed')); });
+export const newPost = () => pickFile('image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm,video/quicktime', async (file) => {
+  if (file.type.startsWith('video/')) { const v = await editVideo(file); if (v) compose('reel', v, () => actions.openFeed?.('feed')); return; }
+  const b = await editImage(file); if (b) compose('post', b, () => actions.openFeed?.('feed'));
+});
 export const newStory = () => pickFile('image/png,image/jpeg,image/webp', async (file) => { const b = await editImage(file, { aspect: '9:16' }); if (b) compose('story', b, () => actions.openFeed?.('feed')); });
 export const newReel = () => pickFile('video/mp4,video/webm,video/quicktime', async (file) => { const b = await editVideo(file); if (b) compose('reel', b, () => actions.openFeed?.('reels')); });

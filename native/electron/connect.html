@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' data:">
+<title>Scrxaper</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; font: 15px/1.5 system-ui, "Segoe UI", sans-serif; color: #e8f1ff; background: radial-gradient(60% 50% at 20% 10%, #2b6c7a66, transparent), radial-gradient(50% 60% at 85% 20%, #6a3d9a55, transparent), #0b0d10; }
+  main { width: min(440px, calc(100% - 32px)); padding: 28px; border-radius: 24px; background: rgba(26,29,36,.7); border: 1px solid rgba(232,241,255,.13); box-shadow: 0 30px 80px -30px #000; }
+  h1 { margin: 0 0 6px; font-size: 1.5rem; } p { color: #8e9bb0; margin: 0 0 16px; }
+  input { width: 100%; box-sizing: border-box; padding: 12px 14px; border-radius: 12px; border: 1px solid rgba(232,241,255,.2); background: rgba(0,0,0,.25); color: inherit; font: inherit; }
+  button { margin-top: 14px; width: 100%; padding: 12px; border: 0; border-radius: 999px; font-weight: 700; font: inherit; cursor: pointer; color: #0b0d10; background: linear-gradient(180deg, #f3f8ff, #b7c9e6); }
+  .err { color: #e9a0a0; min-height: 1.4em; margin-top: 10px; }
+</style></head>
+<body><main>
+  <h1>Connect to your Scrxaper</h1>
+  <p>Enter the address of your Scrxaper site, for example <b>chat.example.com</b>.</p>
+  <form id="f"><input id="u" placeholder="your-site.example.com" autocomplete="off" spellcheck="false" autofocus><button type="submit">Connect</button></form>
+  <div class="err" id="e"></div>
+</main>
+<script>
+  const q = new URLSearchParams(location.search); if (q.get('error')) document.getElementById('e').textContent = 'Could not reach the site: ' + q.get('error');
+  document.getElementById('f').addEventListener('submit', async (ev) => {
+    ev.preventDefault(); const r = await window.ScrxDesktop.setUrl(document.getElementById('u').value.trim());
+    if (!r.ok) document.getElementById('e').textContent = 'That does not look like an address.';
+  });
+</script></body></html>

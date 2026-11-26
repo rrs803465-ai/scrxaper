@@ -71,7 +71,11 @@ const P = {
   disc: 'M12 3a9 9 0 100 18 9 9 0 000-18zM12 10a2 2 0 100 4 2 2 0 000-4z', gift: 'M4 9h16v4H4zM6 13v7h12v-7M12 9v11M12 9c-3 0-4-4-1-4 2 0 1 4 1 4zM12 9c3 0 4-4 1-4-2 0-1 4-1 4z',
   flame: 'M12 3c1 4 5 5 5 10a5 5 0 01-10 0c0-2 1-3 2-4 0 2 1 3 2 3 0-3-1-6 1-9z', phoneoff: 'M4 4l16 16M5 4h4l2 5-2.500 1.500', refresh: 'M20 5v5h-5M4 19v-5h5M18 10a7 7 0 00-12-2M6 14a7 7 0 0012 2',
   mail: 'M3 6h18v12H3zM3 7l9 7 9-7', info: 'M12 3a9 9 0 100 18 9 9 0 000-18zM12 11v6M12 8h.01', folder: 'M3 6h6l2 2h10v11H3z', upload: 'M12 16V5M7 9l5-5 5 5M5 20h14',
-  wallet: 'M3 7h16v12H3zM3 7l12-3v3M15 13h.01', palette: 'M12 3a9 9 0 000 18c1.500 0 2-1 2-2s-1-1.500 0-2.500 3 0 5-1A9 9 0 0012 3zM8 10h.01M12 7h.01M16 10h.01', deaf: 'M4 14v-2a8 8 0 0116 0v2M4 14h3v5H4zM17 14h3v5h-3zM4 4l16 16',
+  wallet: 'M3 7h16v12H3zM3 7l12-3v3M15 13h.01', palette: 'M12 3a9 9 0 000 18c1.500 0 2-1 2-2s-1-1.500 0-2.500 3 0 5-1A9 9 0 0012 3zM8 10h.01M12 7h.01M16 10h.01', square: 'M5 5h14v14H5z', circle: 'M12 4a8 8 0 100 16 8 8 0 000-16z', triangle: 'M12 4l9 16H3z', diamond: 'M12 3l9 9-9 9-9-9z', hex: 'M12 3l8 4.500v9L12 21l-8-4.500v-9z',
+  bolt: 'M13 3L5 14h6l-1 7 8-11h-6z', leaf: 'M5 19C5 10 10 5 19 5c0 9-5 14-14 14zM5 19l8-8', drop: 'M12 3s6 6 6 11a6 6 0 01-12 0c0-5 6-11 6-11z', skull: 'M5 12a7 7 0 1114 0v3h-2v3H7v-3H5zM9.500 12h.01M14.500 12h.01',
+  cross: 'M10 4h4v6h6v4h-6v6h-4v-6H4v-4h6z', tool: 'M14 6a4 4 0 00-5 5l-5 5 3 3 5-5a4 4 0 005-5l-3 2-2-2z', game: 'M6 8h12a3 3 0 013 3v3a3 3 0 01-5 2l-1-1H9l-1 1a3 3 0 01-5-2v-3a3 3 0 013-3zM8 11v3M6.500 12.500h3M16 11.500h.01M18 13.500h.01',
+  quote: 'M5 17c0-4 1-7 4-8M5 17h4v-4H5M14 17c0-4 1-7 4-8M14 17h4v-4h-4', google: 'M19.500 12H12M19 12a7 7 0 11-2-5', wand: 'M5 19L15 9M14 4v3M12.500 5.500h3M19 10v3M17.500 11.500h3',
+  deaf: 'M4 14v-2a8 8 0 0116 0v2M4 14h3v5H4zM17 14h3v5h-3zM4 4l16 16',
 };
 export const icon = (name, size = 20) => {
   const t = document.createElement('template');
@@ -118,6 +122,15 @@ export const avatarEl = (id, name, size = 36, square = false) => {
   return node;
 };
 export const nameEl = (p) => { const n = h('span', { class: 'nm' }, p.name ?? p.displayName ?? p.username); return n; };
+export const TAG_ICONS = ['square', 'circle', 'triangle', 'diamond', 'hex', 'bolt', 'star', 'moon', 'leaf', 'flame', 'drop', 'shield', 'crown', 'skull', 'heart', 'eye', 'wave', 'cross'];
+// Server tag, like Discord's: a small symbol and up to four letters, in the server's colour.
+export const clanChip = (clan) => (clan?.tag ? h('span', { class: 'clan', title: `Member of ${clan.name}`, style: clan.color ? { '--clan': clan.color } : {} }, icon(TAG_ICONS.includes(clan.icon) ? clan.icon : 'square', 11), clan.tag) : null);
+export const downloadFile = (url, name = 'download') => { const a = h('a', { href: url, download: name, rel: 'noopener' }); document.body.append(a); a.click(); a.remove(); };
+export const viewImage = (url, name = 'Image') => {
+  const sh = openSheet(name, h('div', { class: 'stack' }, h('img', { src: url, alt: name, class: 'viewer-img' }),
+    h('div', { class: 'dlg-actions' }, h('button', { class: 'primary', type: 'button', onclick: () => downloadFile(url, /\.[a-z0-9]{2,4}$/i.test(name) ? name : `${name}.png`) }, icon('download', 16), ' Download'))), { wide: true });
+  return sh;
+};
 export const roleTag = (tag) => (tag ? h('span', { class: `rtag rtag-${tag}` }, tag === 'bot' ? 'BOT' : tag.toUpperCase()) : null);
 
 /* ------------------------------------------------------------------ API */
@@ -318,7 +331,8 @@ export function applyPrefs(p) {
   root.dataset.motion = p.reduceMotion ? 'reduced' : 'full';
   root.dataset.glass = p.plain ? 'off' : 'on';
   root.dataset.bubble = c.bubble ?? 'glass';
-  root.dataset.wall = c.wallpaperId ? 'custom' : (c.wallpaper ?? 'default');
+  root.dataset.wall = c.wallpaperVideoId ? 'video' : c.wallpaperId ? 'custom' : (c.wallpaper ?? 'default');
+  paintVideoWall(c.wallpaperVideoId);
   root.dataset.side = c.mineSide ?? 'right';
   root.dataset.avatars = c.showAvatars === false ? 'off' : 'on';
   root.dataset.contrast = c.contrast ? 'high' : 'normal';
@@ -331,6 +345,19 @@ export function applyPrefs(p) {
   set('--wall-img', c.wallpaperId ? `url(${fileUrl(c.wallpaperId)})` : null);
   const meta = document.querySelector('meta[name=theme-color]'); if (meta) meta.content = root.dataset.theme === 'light' ? '#eef4fc' : '#0b0d10';
 }
+// Animated wallpaper: a muted looping video behind the whole app. Paused when the tab is hidden or motion is reduced.
+let wallEl = null;
+function paintVideoWall(id) {
+  if (!id) { wallEl?.remove(); wallEl = null; return; }
+  const src = fileUrl(id);
+  if (wallEl && wallEl.dataset.src === src) return;
+  wallEl?.remove();
+  wallEl = h('video', { class: 'wall-video', src, muted: true, loop: true, autoplay: true, playsInline: true, 'aria-hidden': 'true', tabindex: -1, dataset: { src } });
+  wallEl.muted = true;
+  document.body.prepend(wallEl);
+  wallEl.play?.().catch(() => {});
+}
+document.addEventListener('visibilitychange', () => { if (!wallEl) return; if (document.hidden || document.documentElement.dataset.motion === 'reduced') wallEl.pause(); else wallEl.play?.().catch(() => {}); });
 matchMedia('(prefers-color-scheme: light)').addEventListener?.('change', () => state.prefs?.theme === 'system' && applyPrefs(state.prefs));
 document.addEventListener('visibilitychange', () => { document.documentElement.dataset.paused = String(document.hidden); });
 

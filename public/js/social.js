@@ -1,5 +1,5 @@
 // Social: feed, reels, stories, posts, explore, tags, profiles, sharing, notifications, friends.
-import { $, state, bus, actions, h, clear, icon, sq, avatarEl, roleTag, api, upload, toast, fail, safe, ask, openSheet, closeSheets, section, hint, empty, field, form, linkify, ago, confetti, fileUrl, debounce, fmtBytes, setBadge, segmented, select } from './core.js';
+import { $, state, bus, actions, h, clear, icon, sq, avatarEl, roleTag, clanChip, downloadFile, viewImage, api, upload, toast, fail, safe, ask, openSheet, closeSheets, section, hint, empty, field, form, linkify, ago, confetti, fileUrl, debounce, fmtBytes, setBadge, segmented, select } from './core.js';
 import { musicPicker, editImage, editVideo, newPost, newStory, newReel } from './media.js';
 
 const motionOK = () => document.documentElement.dataset.motion !== 'reduced';
@@ -44,7 +44,7 @@ function postCard(p, { onGone } = {}) {
   const card = h('article', { class: 'post', dataset: { id: p.id } },
     h('header', { class: 'post-head' }, h('button', { type: 'button', class: 'who', onclick: () => actions.openProfile(p.username) }, avatarEl(p.avatar, p.name, 36), h('span', { class: 'nm' }, p.name), h('small', {}, `@${p.username} · ${ago(p.at)}`)), more),
     wrap, music,
-    h('div', { class: 'post-acts' }, likeBtn, h('button', { type: 'button', class: 'act', 'aria-label': 'Comments', onclick: () => openPost(p.id) }, icon('comment', 20), h('span', {}, String(p.comments))), h('button', { type: 'button', class: 'act', 'aria-label': 'Share', onclick: () => sharePost(p) }, icon('share', 20))),
+    h('div', { class: 'post-acts' }, likeBtn, h('button', { type: 'button', class: 'act', 'aria-label': 'Comments', onclick: () => openPost(p.id) }, icon('comment', 20), h('span', {}, String(p.comments))), h('button', { type: 'button', class: 'act', 'aria-label': 'Share', onclick: () => sharePost(p) }, icon('share', 20)), h('button', { type: 'button', class: 'act', 'aria-label': p.kind === 'reel' ? 'Download video' : 'Download image', title: 'Download', onclick: () => downloadFile(fileUrl(p.media), `${p.username}-${p.id}.${p.kind === 'reel' ? 'mp4' : 'png'}`) }, icon('download', 20))),
     p.caption ? h('p', { class: 'post-cap' }, h('b', {}, p.username), ' ', ...linkify(p.caption), p.editedAt ? h('small', {}, ' (edited)') : null) : null);
   return card;
 }
@@ -237,7 +237,7 @@ export async function openProfile(username) {
         if (ot.length) tools.push(section('Site tools', h('div', { class: 'inline wrap' }, ...ot)));
       }
     }
-    clear(body, banner, h('div', { class: 'p-head' }, h('span', { class: `p-av${cos ? ` frame-${cos.id}` : ''}` }, avatarEl(p.avatar, p.displayName, 92)), h('div', { class: 'grow' }, h('h3', {}, p.displayName, ' ', roleTag(p.tag), p.private ? h('span', { class: 'chip' }, icon('lock', 12), ' Private') : null), h('small', {}, `@${p.username}`), p.status ? h('p', { class: 'status' }, p.status) : null)),
+    clear(body, banner, h('div', { class: 'p-head' }, h('span', { class: `p-av${cos ? ` frame-${cos.id}` : ''}` }, avatarEl(p.avatar, p.displayName, 92)), h('div', { class: 'grow' }, h('h3', {}, p.displayName, ' ', roleTag(p.tag), clanChip(p.clan), p.private ? h('span', { class: 'chip' }, icon('lock', 12), ' Private') : null), h('small', {}, `@${p.username}`), p.status ? h('p', { class: 'status' }, p.status) : null)),
       p.bio ? h('p', { class: 'bio' }, ...linkify(p.bio)) : null, p.interests?.length ? h('div', { class: 'inline wrap' }, ...p.interests.map((i) => h('span', { class: 'chip' }, i))) : null,
       p.badges?.length ? h('div', { class: 'inline wrap badges' }, ...p.badges.map((b) => h('span', { class: 'chip badge', title: b.description }, icon('star', 12), ` ${b.name}`))) : null, stats, actionsRow, ...tools,
       lockd ?? h('div', { class: 'stack' }, h('div', { class: 'side-label' }, 'Posts'), h('div', { class: 'ph' }, 'Loading')));

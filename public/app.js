@@ -5,8 +5,9 @@ import { initSpaces, paintServers, paintTabbar, refreshLists } from './js/spaces
 import { init as initCalls } from './js/calls.js';
 import { init as initSocial } from './js/social.js';
 import { init as initStudio } from './js/studio.js';
+import { runSetup } from './js/setup.js';
 
-const EVENTS = ['message', 'channel-message', 'channel-delete', 'community', 'group', 'friend', 'notification', 'call', 'room', 'room-ring', 'room-signal', 'music', 'poll', 'banned'];
+const EVENTS = ['message', 'channel-message', 'channel-delete', 'message-delete', 'group-message-delete', 'community', 'group', 'friend', 'notification', 'call', 'room', 'room-ring', 'room-signal', 'music', 'poll', 'banned'];
 let es = null;
 const LAUNCH = new URLSearchParams(location.search); // read before the URL is cleaned
 
@@ -21,6 +22,7 @@ async function enterApp(me, { fresh = false } = {}) {
   Object.assign(state, { me, user: me.username, prefs: me.prefs, privacy: me.privacy, sound: me.sound, ignored: new Set(me.ignored ?? []), mutes: new Set((me.mutes ?? []).map((x) => `${x.kind}:${x.target}`)) });
   applyPrefs(me.prefs);
   $('auth').hidden = true; $('app').hidden = false;
+  hide(); // the splash must not sit on top of onboarding
   history.replaceState(null, '', '/app');
   initChat(); initSpaces();
   for (const init of [initCalls, initSocial, initStudio]) { try { await init(); } catch (e) { console.error('module init failed', e); } }
@@ -61,10 +63,42 @@ $('auth-form').addEventListener('submit', async (e) => {
   } finally { btn.disabled = false; }
 });
 
-const hide = () => { const b = $('boot'); b.classList.add('gone'); setTimeout(() => b.remove(), 600); };
-api('/api/me').then(enterApp).catch((err) => {
-  authScreen(location.hash === '#signup' ? 'signup' : 'login');
-  if (err.status && err.status !== 401) toast(err.message, { kind: 'error' });
-}).finally(hide);
+const hide = () => { const b = $('boot'); if (!b) return; b.classList.add('gone'); setTimeout(() => b.remove(), 600); };
+
+// Supabase sends people back to /app#access_token=... after Google sign-in; the server verifies it with Supabase.
+async function googleReturn() {
+  const q = new URLSearchParams(location.hash.replace(/^#/, ''));
+  if (q.get('error_description') || q.get('error')) { history.replaceState(null, '', '/app'); return { error: (q.get('error_description') ?? q.get('error')).replace(/\+/g, ' ') }; }
+  const token = q.get('access_token');
+  if (!token) return null;
+  history.replaceState(null, '', '/app');
+  try { return { ok: await api('/api/auth/google', { body: { accessToken: token } }) }; } catch (err) { return { error: err.data?.banned ? null : err.message, banned: err.data?.banned ? err.data : null }; }
+}
+const paintAuthExtras = (cfg) => {
+  document.title = cfg.siteName ? `${cfg.siteName}` : document.title;
+  $('google-box').hidden = !cfg.google;
+  $('google-btn').onclick = () => { location.href = `${cfg.authorizeUrl}&redirect_to=${encodeURIComponent(`${location.origin}/app`)}`; };
+};
+
+(async () => {
+  const cfg = await api('/api/auth/config').catch(() => ({}));
+  const g = await googleReturn();
+  try {
+    const me = await api('/api/me');
+    await enterApp(me, { fresh: !!g?.ok?.created });
+  } catch (err) {
+    if (cfg.setupNeeded) {
+      hide();
+      await runSetup(cfg);
+      await enterApp(await api('/api/me'));
+    } else {
+      authScreen(location.hash === '#signup' ? 'signup' : 'login');
+      paintAuthExtras(cfg);
+      if (g?.error) $('auth-error').textContent = g.error;
+      if (g?.banned) { $('auth').hidden = true; actions.showBanned ? actions.showBanned({ reason: g.banned.reason }) : ask.alert(g.banned.reason || 'This account is suspended.', 'Account suspended'); }
+      if (err.status && err.status !== 401) toast(err.message, { kind: 'error' });
+    }
+  } finally { hide(); }
+})();
 window.addEventListener('hashchange', () => { if (!$('auth').hidden) authScreen(location.hash === '#signup' ? 'signup' : 'login'); });
 window.addEventListener('unhandledrejection', (e) => { if (e.reason?.status) { e.preventDefault(); fail(e.reason); } });

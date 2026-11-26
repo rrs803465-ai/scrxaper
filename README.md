@@ -29,7 +29,15 @@ Copy `.env.example` for configuration. Set `OWNER_USERNAME` and `OWNER_PASSWORD`
 | Site roles | Owner badge. The owner can make admins (full site power) and staff (minimal). Owner and admins can give Sparks. |
 | Bans | A suspended person gets a popup with the reason; login shows it too. |
 | Secret chats | Opt-in end-to-end encrypted text (ECDH P-256 + AES-GCM). |
-| Installable | Web app manifest and service worker. Landing page and Studio link to the Android APK at `/download/android` (set `APK_URL`). |
+| Installable | Web app manifest and service worker. Landing page and Studio link to the Android app (`/download/android`, set `APK_URL`) and the Windows app (`/download/windows`, set `EXE_URL`). |
+| Continue with Google | Sign up and log in with Google through Supabase (`SUPABASE_URL`, `SUPABASE_ANON_KEY`). New Google accounts pick their own username in onboarding. |
+| Setup wizard | First run with no owner: a 4-step wizard asks for the setup code printed in the server log, creates the owner and names the site. |
+| Video | Posts and reels up to 3 minutes (trim, speed, filters, music). Edited clips are re-encoded up to 1080p. |
+| Animated wallpaper | Studio, Look: use an MP4 or WebM (up to 40 MB) as a looping wallpaper behind the whole app. |
+| Server tags | Admins give a community a tag: a small symbol and up to four letters in a colour. Members can wear it next to their name in chats and on their profile. |
+| Delete messages | Delete your own DMs and group messages (group admins can delete any); community channels already had delete. Everyone in the chat sees it vanish. |
+| Image download | Download button on chat images, in the image viewer and on every post. |
+| Bots | Eight premade bots: Sentinel, Jukebox, Greeter, Funbot, plus Levels (XP and leaderboard), Toolkit (calculator, reminders, timers), Arcade (guess, hangman, scramble, tic-tac-toe) and Quotebook. |
 
 ## Calls when the screen is off
 
@@ -48,9 +56,21 @@ APK_URL=https://github.com/<owner>/<repo>/releases/download/android-latest/scrxa
 
 `/download/android` then redirects there; without `APK_URL` it answers 404 and the buttons just show that message.
 
+### Windows app
+
+`native/electron/` is a desktop app (installer and portable `.exe`) built by `.github/workflows/windows.yml`: Actions tab, Windows app, Run workflow, optionally with your site address. It keeps running in the tray so calls and messages arrive with the window closed, supports microphone, camera and screen share, and can start with Windows. The build is unsigned, so Windows SmartScreen shows "More info, Run anyway" the first time. Publish the link with `EXE_URL=https://github.com/<owner>/<repo>/releases/download/windows-latest/Scrxaper-Setup.exe`.
+
+### Continue with Google (Supabase)
+
+1. Create a Supabase project. Authentication, Providers: turn on Google (it needs a Google Cloud OAuth client; Supabase shows the callback URL to paste there).
+2. Authentication, URL Configuration: add `https://your-site/app` to Redirect URLs.
+3. Set `SUPABASE_URL` and `SUPABASE_ANON_KEY` in the server environment (the anon key is the public one) and restart. The button appears on the sign-in page.
+
+The server checks every token with Supabase before it creates a session, and Google accounts have no password.
+
 ## Verification status
 
-- Server: 13 test files, all passing (`node --test test/<file>`), including a real encrypted Web Push delivery and the ring-pulse behaviour.
+- Server: 14 test files, all passing (`node --test test/<file>`), including a real encrypted Web Push delivery and the ring-pulse behaviour.
 - Client: exercised in headless Chromium against the real server: sign-up and onboarding, chat, communities with premade bots and Jukebox upload, feed, posts, likes, comments, hashtags, explore, stories with music, reels, share-to-chat, friend requests, notifications, every Studio section, ban popup, owner panel, landing page, a real two-browser WebRTC call with the callee-only visual and the bottom call-ended pill, a three-person voice channel. Desktop 1280x800 and mobile 390x844, no console errors, no horizontal overflow.
 - Service worker: registration checked in Chromium; the push handler's notification options were checked against a mock, not a real push service.
 
@@ -61,5 +81,6 @@ APK_URL=https://github.com/<owner>/<repo>/releases/download/android-latest/scrxa
 - Calls behind strict NATs need a TURN server (`TURN_URL`).
 - Secret chats: keys are static per browser (no forward secrecy), text only; files and metadata are not hidden.
 - The video editor re-encodes in the browser with MediaRecorder; browsers without it keep the original file.
-- The Android app (`android/`) compiles on GitHub Actions but has not been run on a real phone. The Electron scaffold (`native/`) has not been compiled or run. See `android/README.md`.
+- The Android app (`android/`) compiles on GitHub Actions but has not been run on a real phone. The Windows app (`native/electron/`) has not been built or run: its code is syntax-checked only, and the first real build happens in Actions.
+- Google sign-in is tested against a stand-in Supabase server, not a live Supabase project.
 - Buddy needs each person's own Groq key.

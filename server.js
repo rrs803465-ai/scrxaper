@@ -8,14 +8,14 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 import { generateVapidKeys, sendWebPush } from './lib/webpush.js';
-import { BOT_CATALOG, BOT_USERS, automod, parseCommand, funCommand, applyConfig } from './lib/bots.js';
+import { BOT_CATALOG, BOT_USERS, automod, parseCommand, funCommand, applyConfig, levelOf, xpFor, toolkitCommand, arcadeCommand } from './lib/bots.js';
 import makeRooms from './lib/rooms.js';
 
 const publicDir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'public');
 const mime = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml', '.webmanifest': 'application/manifest+json', '.json': 'application/json', '.ico': 'image/x-icon' };
 const SESSION_DAYS = 30;
 const USERNAME = /^[a-z0-9_]{3,24}$/;
-const RESERVED = new Set(['scrxaper', 'teams', 'admin', 'system', 'owner', 'support', 'staff', 'sentinel', 'jukebox', 'greeter', 'funbot']);
+const RESERVED = new Set(['scrxaper', 'teams', 'admin', 'system', 'owner', 'support', 'staff', 'sentinel', 'jukebox', 'greeter', 'funbot', 'levels', 'toolkit', 'arcade', 'quotebook']);
 const TEAMS = 'scrxaper';
 const isPrivateAddress = (ip) => /^(0\.|10\.|127\.|169\.254\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|::1$|::$|f[cd]|fe80|::ffff:)/i.test(ip);
 
@@ -96,6 +96,17 @@ const sniffVideo = (b) => {
   return null;
 };
 
+export const MAX_VIDEO_SECONDS = 180;
+// Reads the duration from an MP4 'mvhd' box. Returns 0 when it cannot be found (then the client limit is all that applies).
+export const mp4Seconds = (b) => {
+  const i = b.indexOf('mvhd');
+  if (i < 4 || i + 32 > b.length) return 0;
+  const v = b[i + 4];
+  const ts = v === 1 ? b.readUInt32BE(i + 24) : b.readUInt32BE(i + 16);
+  const dur = v === 1 ? Number(b.readBigUInt64BE(i + 28)) : b.readUInt32BE(i + 20);
+  return ts > 0 ? dur / ts : 0;
+};
+
 const sniffAudio = (b) => {
   if (b.length < 12) return null;
   const tag = (a, z) => b.subarray(a, z).toString('latin1');
@@ -114,7 +125,8 @@ const hashPassword = (pw) => {
   return `${salt.toString('hex')}:${crypto.scryptSync(pw, salt, 64).toString('hex')}`;
 };
 const checkPassword = (pw, stored) => {
-  const [salt, hash] = stored.split(':');
+  const [salt, hash] = String(stored).split(':');
+  if (!salt || !hash) return false; // accounts without a password (Google sign-in) never match
   const given = crypto.scryptSync(pw, Buffer.from(salt, 'hex'), 64);
   return crypto.timingSafeEqual(given, Buffer.from(hash, 'hex'));
 };
@@ -139,6 +151,10 @@ export function createApp({
   uploadDir = process.env.UPLOAD_DIR || './data/uploads',
   groqBase = process.env.GROQ_BASE_URL || 'https://api.groq.com/openai/v1',
   apkUrl = process.env.APK_URL,
+  exeUrl = process.env.EXE_URL,
+  supabaseUrl = (process.env.SUPABASE_URL ?? '').replace(/\/+$/, ''),
+  supabaseKey = process.env.SUPABASE_ANON_KEY ?? '',
+  setupCodeEnv = process.env.SETUP_CODE ?? '',
 } = {}) {
   if (dbPath !== ':memory:') {
     mkdirSync(path.dirname(dbPath), { recursive: true });
@@ -315,7 +331,8 @@ export function createApp({
   const freshOnboard = addCol('profiles', 'onboarded', 'INTEGER NOT NULL DEFAULT 0');
   if (freshOnboard) { db.exec('UPDATE profiles SET onboarded = 1'); db.exec('INSERT OR IGNORE INTO profiles (user_id, onboarded) SELECT id, 1 FROM users'); }
   addCol('community_members', 'position', 'INTEGER NOT NULL DEFAULT 0');
-  for (const [t, c, d] of [['profiles', 'private', 'INTEGER NOT NULL DEFAULT 0'], ['profiles', 'interests', "TEXT NOT NULL DEFAULT '[]'"], ['profiles', 'custom', "TEXT NOT NULL DEFAULT '{}'"],
+  for (const [t, c, d] of [['users', 'email', 'TEXT'], ['users', 'auth_id', 'TEXT'], ['users', 'username_set', 'INTEGER NOT NULL DEFAULT 1'], ['communities', 'tag', 'TEXT'], ['communities', 'tag_icon', 'TEXT'], ['communities', 'tag_color', 'TEXT'], ['profiles', 'worn_tag', 'INTEGER'],
+    ['profiles', 'private', 'INTEGER NOT NULL DEFAULT 0'], ['profiles', 'interests', "TEXT NOT NULL DEFAULT '[]'"], ['profiles', 'custom', "TEXT NOT NULL DEFAULT '{}'"],
     ['profiles', 'calling_tune', "TEXT NOT NULL DEFAULT 'ringback'"], ['profiles', 'viz_style', "TEXT NOT NULL DEFAULT 'ring'"], ['profiles', 'viz_color', 'TEXT'],
     ['posts', 'music_id', 'TEXT'], ['posts', 'music_title', 'TEXT'], ['posts', 'music_start', 'INTEGER NOT NULL DEFAULT 0'], ['posts', 'music_mute', 'INTEGER NOT NULL DEFAULT 0'],
     ['stories', 'music_id', 'TEXT'], ['stories', 'music_title', 'TEXT'], ['stories', 'music_start', 'INTEGER NOT NULL DEFAULT 0'],
@@ -358,6 +375,14 @@ export function createApp({
       user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, key_id TEXT NOT NULL, jwk TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (user_id, key_id)
     );
     CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS bot_xp (
+      scope TEXT NOT NULL, scope_id INTEGER NOT NULL, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      xp INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (scope, scope_id, user_id)
+    );
+    CREATE TABLE IF NOT EXISTS bot_quotes (
+      id INTEGER PRIMARY KEY, scope TEXT NOT NULL, scope_id INTEGER NOT NULL, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      body TEXT NOT NULL, at INTEGER NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS votes (
       message_scope TEXT NOT NULL, message_id INTEGER NOT NULL, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, choice INTEGER NOT NULL,
       PRIMARY KEY (message_scope, message_id, user_id)
@@ -408,6 +433,13 @@ export function createApp({
     syncRoleBadge(db.prepare('SELECT id FROM users WHERE username = ?').get(name).id, 'owner');
     db.prepare("INSERT OR IGNORE INTO profiles (user_id, onboarded) SELECT id, 1 FROM users WHERE username = ?").run(name);
   }
+
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS users_auth_id ON users (auth_id) WHERE auth_id IS NOT NULL');
+  const ownerExists = () => !!db.prepare('SELECT 1 FROM users WHERE is_owner = 1').get();
+  // First run: with no owner yet, a setup code is printed to the server log and the setup wizard in the app asks for it.
+  let setupCode = ownerExists() ? '' : (setupCodeEnv || crypto.randomBytes(4).toString('hex'));
+  if (setupCode && !setupCodeEnv && !process.env.NODE_TEST_CONTEXT) console.log(JSON.stringify({ level: 'info', message: `First run: open the app and use setup code ${setupCode} to create the owner account.` }));
+  const googleOn = !!(supabaseUrl && supabaseKey);
 
   const streams = new Map();
   const attempts = new Map();
@@ -586,10 +618,16 @@ export function createApp({
     }
     return out;
   };
+  const TAG_ICONS = ['square', 'circle', 'triangle', 'diamond', 'hex', 'bolt', 'star', 'moon', 'leaf', 'flame', 'drop', 'shield', 'crown', 'skull', 'heart', 'eye', 'wave', 'cross'];
+  const clanOf = (username) => {
+    const r = db.prepare(`SELECT c.id, c.name, c.tag, c.tag_icon AS icon, c.tag_color AS color FROM users u JOIN profiles p ON p.user_id = u.id JOIN communities c ON c.id = p.worn_tag
+      JOIN community_members cm ON cm.community_id = c.id AND cm.user_id = u.id WHERE u.username = ? AND c.tag IS NOT NULL`).get(String(username ?? ''));
+    return r ?? null;
+  };
   const decorate = (rows, scope, uid) => {
     const files = fileInfo(rows.filter((r) => r.attachment).map((r) => r.attachment));
     return rows.map((r) => {
-      const out = { ...r, tag: r.tag ?? tagOf(r), file: r.attachment ? files.get(r.attachment) ?? null : null };
+      const out = { ...r, tag: r.tag ?? tagOf(r), file: r.attachment ? files.get(r.attachment) ?? null : null, ...(r.from ? { clan: clanOf(r.from) } : {}) };
       delete out.is_owner; delete out.site_role; delete out.is_bot; delete out.meta;
       if (r.meta) {
         out.meta = JSON.parse(r.meta);
@@ -604,7 +642,7 @@ export function createApp({
     });
   };
   const SENDER = 'u.username AS "from", u.display_name AS name, (SELECT avatar_id FROM profiles WHERE user_id = u.id) AS avatar, u.is_owner, u.site_role, u.is_bot';
-  const dmPayload = (id, sender, peer, text, at, att, kind, meta) => ({ id, from: sender.username, name: sender.display_name, body: text, at, attachment: att, kind, tag: tagOf(sender), ...(meta ? { meta: JSON.parse(meta) } : {}), ...(att ? { file: fileInfo([att]).get(att) } : {}) });
+  const dmPayload = (id, sender, peer, text, at, att, kind, meta) => ({ id, from: sender.username, name: sender.display_name, body: text, at, attachment: att, kind, tag: tagOf(sender), clan: clanOf(sender.username), ...(meta ? { meta: JSON.parse(meta) } : {}), ...(att ? { file: fileInfo([att]).get(att) } : {}) });
 
   const insertDm = (sender, peer, text, { att = null, kind = 'text', meta = null } = {}) => {
     const at = Date.now();
@@ -622,7 +660,7 @@ export function createApp({
     const u = db.prepare('SELECT username, display_name, is_owner, site_role, is_bot FROM users WHERE id = ?').get(senderId);
     const metaJson = meta ? JSON.stringify(meta) : null;
     const id = Number(db.prepare('INSERT INTO group_messages (group_id, sender_id, body, created_at, attachment_id, kind, meta) VALUES (?, ?, ?, ?, ?, ?, ?)').run(gid, senderId, text, at, att, kind, metaJson).lastInsertRowid);
-    const payload = { id, group: Number(gid), from: u.username, name: u.display_name, avatar: avatarOf(senderId), body: text, at, attachment: att, kind, tag: tagOf(u),
+    const payload = { id, group: Number(gid), from: u.username, name: u.display_name, avatar: avatarOf(senderId), body: text, at, attachment: att, kind, tag: tagOf(u), clan: clanOf(u.username),
       ...(meta ? { meta: kind === 'poll' ? { ...meta, counts: meta.options.map(() => 0), mine: null } : meta } : {}), ...(att ? { file: fileInfo([att]).get(att) } : {}) };
     pushGroup(gid, 'message', payload);
     const g = db.prepare('SELECT name FROM groups WHERE id = ?').get(gid);
@@ -635,7 +673,7 @@ export function createApp({
     const u = db.prepare('SELECT username, display_name, is_owner, site_role, is_bot FROM users WHERE id = ?').get(senderId);
     const metaJson = meta ? JSON.stringify(meta) : null;
     const id = Number(db.prepare('INSERT INTO channel_messages (channel_id, sender_id, body, created_at, attachment_id, kind, meta) VALUES (?, ?, ?, ?, ?, ?, ?)').run(ch.id, senderId, text, at, att, kind, metaJson).lastInsertRowid);
-    const payload = { id, channel: ch.id, from: u.username, name: u.display_name, avatar: avatarOf(senderId), body: text, at, attachment: att, kind, tag: tagOf(u),
+    const payload = { id, channel: ch.id, from: u.username, name: u.display_name, avatar: avatarOf(senderId), body: text, at, attachment: att, kind, tag: tagOf(u), clan: clanOf(u.username),
       ...(meta ? { meta: kind === 'poll' ? { ...meta, counts: meta.options.map(() => 0), mine: null } : meta } : {}), ...(att ? { file: fileInfo([att]).get(att) } : {}) };
     pushChannel(ch, 'channel-message', payload);
     return payload;
@@ -723,12 +761,77 @@ export function createApp({
     throw new HttpError(422, `Sentinel blocked your message: ${reason}.`);
   };
   // Run after a message is stored: bot commands.
+  const games = new Map();
+  const xpAt = new Map();
+  const reminders = new Map();
+  const levelsStep = (scope, sid, target, me, cfg) => {
+    const key = `${scope}:${sid}:${me.id}`;
+    if (Date.now() - (xpAt.get(key) ?? 0) < 30000) return;
+    xpAt.set(key, Date.now());
+    const gain = Math.min(Math.max(Number(cfg.perMessage) || 10, 1), 50);
+    const before = db.prepare('SELECT xp FROM bot_xp WHERE scope = ? AND scope_id = ? AND user_id = ?').get(scope, Number(sid), me.id)?.xp ?? 0;
+    db.prepare('INSERT INTO bot_xp (scope, scope_id, user_id, xp) VALUES (?, ?, ?, ?) ON CONFLICT (scope, scope_id, user_id) DO UPDATE SET xp = xp + excluded.xp').run(scope, Number(sid), me.id, gain);
+    if (cfg.announce !== false && levelOf(before + gain) > levelOf(before)) botSay(target, 'levels', `${me.display_name} reached level ${levelOf(before + gain)}.`);
+  };
+  const levelsCommand = (scope, sid, target, me, cmd) => {
+    const say = (t) => botSay(target, 'levels', t);
+    if (cmd === 'top') {
+      const rows = db.prepare('SELECT u.display_name AS name, x.xp FROM bot_xp x JOIN users u ON u.id = x.user_id WHERE x.scope = ? AND x.scope_id = ? ORDER BY x.xp DESC LIMIT 10').all(scope, Number(sid));
+      return say(rows.length ? `Leaderboard:\n${rows.map((r, i) => `${i + 1}. ${r.name}, level ${levelOf(r.xp)} (${r.xp} XP)`).join('\n')}` : 'Nobody has XP yet. Start chatting.');
+    }
+    const mine = db.prepare('SELECT xp FROM bot_xp WHERE scope = ? AND scope_id = ? AND user_id = ?').get(scope, Number(sid), me.id)?.xp ?? 0;
+    const pos = 1 + countOf('SELECT COUNT(*) AS n FROM bot_xp WHERE scope = ? AND scope_id = ? AND xp > ?', scope, Number(sid), mine);
+    const lv = levelOf(mine);
+    return say(`${me.display_name}: level ${lv}, ${mine} XP, rank #${pos}. ${xpFor(lv + 1) - mine} XP to level ${lv + 1}.`);
+  };
+  const quoteCommand = (scope, sid, target, me, cmd, args) => {
+    const say = (t) => botSay(target, 'quotebook', t);
+    const rows = () => db.prepare('SELECT q.id, q.body, q.user_id, u.display_name AS by FROM bot_quotes q JOIN users u ON u.id = q.user_id WHERE q.scope = ? AND q.scope_id = ? ORDER BY q.id').all(scope, Number(sid));
+    if (cmd === 'quotes') { const all = rows().slice(-10); return say(all.length ? `Latest quotes:\n${all.map((q) => `#${q.id} ${q.body}  (saved by ${q.by})`).join('\n')}` : 'No quotes yet. Save one with !quote add text.'); }
+    const m = /^(add|del|delete)\s+([\s\S]+)$/i.exec(args);
+    if (m && m[1].toLowerCase() === 'add') {
+      const body = m[2].trim().slice(0, 300);
+      if (countOf('SELECT COUNT(*) AS n FROM bot_quotes WHERE scope = ? AND scope_id = ?', scope, Number(sid)) >= 200) return say('The quote book is full (200).');
+      const id = Number(db.prepare('INSERT INTO bot_quotes (scope, scope_id, user_id, body, at) VALUES (?, ?, ?, ?, ?)').run(scope, Number(sid), me.id, body, Date.now()).lastInsertRowid);
+      return say(`Saved as #${id}.`);
+    }
+    if (m) {
+      const q = db.prepare('SELECT id, user_id FROM bot_quotes WHERE id = ? AND scope = ? AND scope_id = ?').get(Number(m[2].replace('#', '')), scope, Number(sid));
+      if (!q) return say('No such quote.');
+      if (q.user_id !== me.id) return say('You can only remove quotes you saved.');
+      db.prepare('DELETE FROM bot_quotes WHERE id = ?').run(q.id);
+      return say(`Removed #${q.id}.`);
+    }
+    const all = rows();
+    if (!all.length) return say('No quotes yet. Save one with !quote add text.');
+    const q = args && /^#?\d+$/.test(args) ? all.find((x) => x.id === Number(args.replace('#', ''))) : all[Math.floor(Math.random() * all.length)];
+    return say(q ? `"${q.body}"  #${q.id}, saved by ${q.by}` : 'No such quote.');
+  };
   const afterMessage = (scope, sid, target, me, text) => {
     const bots = installedBots(scope, sid);
-    const cmd = text && me.id !== botId.funbot ? parseCommand(text) : null;
+    if (bots.levels && text && !me.is_bot && !parseCommand(text)) levelsStep(scope, sid, target, me, bots.levels);
+    const cmd = text && !me.is_bot ? parseCommand(text) : null;
     if (!cmd || !bots[cmd.bot]) return;
+    const key = `${scope}:${sid}`;
     if (cmd.bot === 'jukebox') return musicCommand(scope, sid, target, me, cmd.cmd, cmd.args);
-    const out = funCommand(cmd.cmd, cmd.args, { user: me.display_name, trivia: trivia.get(`${scope}:${sid}`), setTrivia: (t) => (t ? trivia.set(`${scope}:${sid}`, t) : trivia.delete(`${scope}:${sid}`)) });
+    if (cmd.bot === 'levels') return levelsCommand(scope, sid, target, me, cmd.cmd);
+    if (cmd.bot === 'quotebook') return quoteCommand(scope, sid, target, me, cmd.cmd, cmd.args);
+    if (cmd.bot === 'toolkit') {
+      const out = toolkitCommand(cmd.cmd, cmd.args, { user: me.display_name });
+      if (!out) return;
+      if (out.schedule) {
+        const mine = reminders.get(me.id) ?? 0;
+        if (mine >= 5) return botSay(target, 'toolkit', 'You already have 5 reminders waiting.');
+        reminders.set(me.id, mine + 1);
+        setTimeout(() => { reminders.set(me.id, Math.max(0, (reminders.get(me.id) ?? 1) - 1)); try { botSay(target, 'toolkit', out.schedule.text); } catch { /* group or channel is gone */ } }, out.schedule.ms).unref?.();
+      }
+      return botSay(target, 'toolkit', out.text);
+    }
+    if (cmd.bot === 'arcade') {
+      const out = arcadeCommand(cmd.cmd, cmd.args, { user: me.display_name, game: games.get(key) ?? {}, setGame: (g) => games.set(key, g) });
+      return out && botSay(target, 'arcade', out.text);
+    }
+    const out = funCommand(cmd.cmd, cmd.args, { user: me.display_name, trivia: trivia.get(key), setTrivia: (t) => (t ? trivia.set(key, t) : trivia.delete(key)) });
     if (out) botSay(target, 'funbot', out.text, out.kind ? { kind: out.kind, meta: out.meta } : undefined);
   };
   const generalChannel = (cid) => db.prepare("SELECT * FROM channels WHERE community_id = ? AND kind = 'text' AND private = 0 ORDER BY position, id LIMIT 1").get(Number(cid));
@@ -936,7 +1039,7 @@ export function createApp({
   const canView = (me, id, file) => {
     if (file.owner === me.id) return true;
     if (file.kind === 'attachment') return canSeeAttachment(me, id, file.owner);
-    if (file.kind === 'wallpaper') return false;
+    if (file.kind === 'wallpaper' || file.kind === 'wallvideo') return false;
     if (file.kind === 'track') {
       const t = db.prepare('SELECT scope, scope_id FROM bot_tracks WHERE upload_id = ?').get(id);
       return !!t && scopeMembers(t.scope, t.scope_id).includes(me.id);
@@ -994,18 +1097,66 @@ export function createApp({
       sendJson(res, 201, { id });
     },
 
+    'POST /api/community-tag': async (req, res, me) => {
+      const { community, tag, icon, color } = await readJson(req);
+      needRole(needCMember(me, community), 'admin');
+      const t = String(tag ?? '').trim().toUpperCase();
+      if (t && !/^[A-Z0-9]{2,4}$/.test(t)) throw new HttpError(400, 'A tag is 2 to 4 letters or numbers.');
+      if (t && !TAG_ICONS.includes(icon)) throw new HttpError(400, 'Pick one of the tag symbols.');
+      const col = /^#[0-9a-f]{6}$/i.test(color ?? '') ? color : null;
+      if (t && db.prepare('SELECT 1 FROM communities WHERE tag = ? AND id != ?').get(t, Number(community))) throw new HttpError(409, 'Another server already uses that tag.');
+      db.prepare('UPDATE communities SET tag = ?, tag_icon = ?, tag_color = ? WHERE id = ?').run(t || null, t ? icon : null, t ? col : null, Number(community));
+      if (!t) db.prepare('UPDATE profiles SET worn_tag = NULL WHERE worn_tag = ?').run(Number(community));
+      logMod(Number(community), me, 'set-tag', t || 'cleared');
+      pushCommunity(Number(community));
+      sendJson(res, 200, { tag: t || null, icon: t ? icon : null, color: t ? col : null });
+    },
+
+    'POST /api/wear-tag': async (req, res, me) => {
+      const { community } = await readJson(req);
+      prefsOf(me.id);
+      if (community == null) { db.prepare('UPDATE profiles SET worn_tag = NULL WHERE user_id = ?').run(me.id); return sendJson(res, 200, { clan: null }); }
+      needCMember(me, community);
+      if (!db.prepare('SELECT 1 FROM communities WHERE id = ? AND tag IS NOT NULL').get(Number(community))) throw new HttpError(404, 'That server has no tag yet.');
+      db.prepare('UPDATE profiles SET worn_tag = ? WHERE user_id = ?').run(Number(community), me.id);
+      sendJson(res, 200, { clan: clanOf(me.username) });
+    },
+
+    'POST /api/message-delete': async (req, res, me) => {
+      const { id, with: to } = await readJson(req);
+      const peer = findPeer(me, to);
+      const m = db.prepare('SELECT id, attachment_id FROM messages WHERE id = ? AND sender_id = ? AND recipient_id = ?').get(Number(id), me.id, peer.id);
+      if (!m) throw new HttpError(404, 'You can only delete your own messages.');
+      db.prepare('DELETE FROM messages WHERE id = ?').run(m.id);
+      push(me.id, 'message-delete', { id: m.id, peer: peer.username });
+      push(peer.id, 'message-delete', { id: m.id, peer: me.username });
+      sendJson(res, 200, { ok: true });
+    },
+
+    'POST /api/group-message-delete': async (req, res, me) => {
+      const { group, id } = await readJson(req);
+      const role = needMember(me, group);
+      const m = db.prepare('SELECT sender_id FROM group_messages WHERE id = ? AND group_id = ?').get(Number(id), Number(group));
+      if (!m) throw new HttpError(404, 'No such message');
+      if (m.sender_id !== me.id && role !== 'admin') throw new HttpError(403, 'Only the sender or a group admin can delete this.');
+      db.prepare('DELETE FROM group_messages WHERE id = ?').run(Number(id));
+      pushGroup(Number(group), 'group-message-delete', { group: Number(group), id: Number(id) });
+      sendJson(res, 200, { ok: true });
+    },
+
     'GET /api/community': (req, res, me, url) => {
       const id = Number(url.searchParams.get('id'));
       const m = needCMember(me, id);
       sendJson(res, 200, {
         role: m.role, myPerms: permsOf(m),
         roles: db.prepare('SELECT id, name, color, perms FROM community_roles WHERE community_id = ? ORDER BY id').all(id).map((r) => ({ ...r, perms: JSON.parse(r.perms) })),
-        community: db.prepare('SELECT id, name, description, public, icon_id AS icon FROM communities WHERE id = ?').get(id),
+        community: db.prepare('SELECT id, name, description, public, icon_id AS icon, tag, tag_icon AS tagIcon, tag_color AS tagColor FROM communities WHERE id = ?').get(id),
+        wearing: db.prepare('SELECT worn_tag AS w FROM profiles WHERE user_id = ?').get(me.id)?.w === id,
         channels: db.prepare('SELECT id, name, kind, topic, read_only AS readOnly, private FROM channels WHERE community_id = ? AND (private = 0 OR ?) ORDER BY position, id').all(id, RANK[m.role] >= 1 ? 1 : 0),
         bots: Object.keys(installedBots('community', id)),
         members: db.prepare(`SELECT u.username, u.display_name AS name, (SELECT avatar_id FROM profiles WHERE user_id = u.id) AS avatar, u.is_owner, u.site_role, cm.role, r.name AS customRole, cm.timeout_until > ? AS timedOut FROM community_members cm
           JOIN users u ON u.id = cm.user_id LEFT JOIN community_roles r ON r.id = cm.custom_role_id WHERE cm.community_id = ? ORDER BY u.username`).all(Date.now(), id)
-          .map((r) => { const { is_owner, site_role, ...rest } = r; return { ...rest, tag: tagOf({ is_owner, site_role }), timedOut: !!r.timedOut }; }).sort((a, b) => RANK[b.role] - RANK[a.role]),
+          .map((r) => { const { is_owner, site_role, ...rest } = r; return { ...rest, tag: tagOf({ is_owner, site_role }), clan: clanOf(r.username), timedOut: !!r.timedOut }; }).sort((a, b) => RANK[b.role] - RANK[a.role]),
       });
     },
 
@@ -1666,6 +1817,72 @@ export function createApp({
       }
     },
 
+    'GET /api/auth/config': (req, res) => sendJson(res, 200, { google: googleOn, setupNeeded: !!setupCode, siteName: db.prepare("SELECT v FROM kv WHERE k = 'site_name'").get()?.v ?? 'Scrxaper',
+      authorizeUrl: googleOn ? `${supabaseUrl}/auth/v1/authorize?provider=google` : null }),
+
+    'POST /api/setup': async (req, res) => {
+      if (!setupCode) throw new HttpError(404, 'Setup is already done.');
+      if (limited(`setup:${clientIp(req)}`, authLimit)) throw new HttpError(429, 'Too many attempts. Try again later.');
+      const { code, username, displayName, password, siteName } = await readJson(req);
+      const given = Buffer.from(String(code ?? '').trim()); const want = Buffer.from(setupCode);
+      if (given.length !== want.length || !crypto.timingSafeEqual(given, want)) throw new HttpError(403, 'That setup code is not right. It is printed in the server log.');
+      const name = String(username ?? '').toLowerCase();
+      if (!USERNAME.test(name) || RESERVED.has(name)) throw new HttpError(400, 'Usernames are 3–24 characters: letters, numbers, underscore.');
+      if (typeof password !== 'string' || password.length < 12 || password.length > 200) throw new HttpError(400, 'The owner password needs at least 12 characters.');
+      const display = String(displayName ?? '').trim().slice(0, 40) || name;
+      let uid;
+      try { uid = Number(db.prepare("INSERT INTO users (username, display_name, password_hash, created_at, is_owner, site_role) VALUES (?, ?, ?, ?, 1, 'owner')").run(name, display, hashPassword(password), Date.now()).lastInsertRowid); }
+      catch (err) { if (String(err.message).includes('UNIQUE')) throw new HttpError(409, 'That username is taken.'); throw err; }
+      syncRoleBadge(uid, 'owner');
+      db.prepare('INSERT OR IGNORE INTO profiles (user_id, onboarded) VALUES (?, 1)').run(uid);
+      const site = String(siteName ?? '').trim().slice(0, 40);
+      if (site) db.prepare("INSERT INTO kv (k, v) VALUES ('site_name', ?) ON CONFLICT (k) DO UPDATE SET v = excluded.v").run(site);
+      setupCode = '';
+      startSession(res, uid, { username: name, displayName: display });
+    },
+
+    'POST /api/auth/google': async (req, res) => {
+      if (!googleOn) throw new HttpError(404, 'Google sign-in is not set up on this server.');
+      if (limited(`google:${clientIp(req)}`, authLimit)) throw new HttpError(429, 'Too many attempts. Try again later.');
+      const { accessToken } = await readJson(req);
+      if (typeof accessToken !== 'string' || accessToken.length < 20 || accessToken.length > 4000) throw new HttpError(400, 'Missing Google sign-in token.');
+      let info;
+      try {
+        const r = await fetch(`${supabaseUrl}/auth/v1/user`, { headers: { apikey: supabaseKey, Authorization: `Bearer ${accessToken}` }, signal: AbortSignal.timeout(10000) });
+        if (!r.ok) throw new Error(String(r.status));
+        info = await r.json();
+      } catch { throw new HttpError(401, 'Google sign-in could not be verified. Try again.'); }
+      const email = String(info?.email ?? '').toLowerCase();
+      const authId = String(info?.id ?? '');
+      const provider = info?.app_metadata?.provider ?? info?.identities?.[0]?.provider;
+      if (!authId || !email || provider !== 'google' || !(info.email_confirmed_at || info.confirmed_at)) throw new HttpError(401, 'That Google account could not be used.');
+      let user = db.prepare('SELECT * FROM users WHERE auth_id = ?').get(authId);
+      let created = false;
+      if (!user) {
+        const meta = info.user_metadata ?? {};
+        const display = String(meta.full_name ?? meta.name ?? email.split('@')[0]).trim().slice(0, 40) || 'New user';
+        let base = email.split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g, '_').slice(0, 18);
+        if (base.length < 3) base = `${base}user`.slice(0, 18);
+        let name = base;
+        for (let k = 0; k < 20 && (RESERVED.has(name) || db.prepare('SELECT 1 FROM users WHERE username = ?').get(name)); k++) name = `${base}${crypto.randomInt(100, 9999)}`.slice(0, 24);
+        const id = Number(db.prepare('INSERT INTO users (username, display_name, password_hash, created_at, email, auth_id, username_set) VALUES (?, ?, ?, ?, ?, ?, 0)').run(name, display, '!', Date.now(), email, authId).lastInsertRowid);
+        if (countOf('SELECT COUNT(*) AS n FROM users WHERE is_system = 0 AND is_bot = 0') <= 100) db.prepare("INSERT OR IGNORE INTO user_badges (user_id, badge_id, at, source) VALUES (?, 'early', ?, 'registration')").run(id, Date.now());
+        user = db.prepare('SELECT * FROM users WHERE id = ?').get(id); created = true;
+      }
+      if (user.banned_at) throw new HttpError(403, `This account is suspended: ${user.banned_reason || 'no reason given'}.`, { banned: true, reason: user.banned_reason || 'No reason given' });
+      startSession(res, user.id, { username: user.username, displayName: user.display_name, created, canPickUsername: !user.username_set });
+    },
+
+    'POST /api/username': async (req, res, me) => {
+      const u = db.prepare('SELECT username_set FROM users WHERE id = ?').get(me.id);
+      if (u.username_set) throw new HttpError(403, 'Your username is already set.');
+      const name = String((await readJson(req)).username ?? '').toLowerCase();
+      if (!USERNAME.test(name) || RESERVED.has(name)) throw new HttpError(400, 'Usernames are 3–24 characters: letters, numbers, underscore.');
+      try { db.prepare('UPDATE users SET username = ?, username_set = 1 WHERE id = ?').run(name, me.id); }
+      catch (err) { if (String(err.message).includes('UNIQUE')) throw new HttpError(409, 'That username is taken.'); throw err; }
+      sendJson(res, 200, { username: name });
+    },
+
     'POST /api/login': async (req, res) => {
       if (limited(`login:${clientIp(req)}`, authLimit)) throw new HttpError(429, 'Too many attempts. Try again later.');
       const { username, password } = await readJson(req);
@@ -1728,6 +1945,8 @@ export function createApp({
     if (typeof c.contrast === 'boolean') out.contrast = c.contrast;
     if (typeof c.showAvatars === 'boolean') out.showAvatars = c.showAvatars;
     if (typeof c.confetti === 'boolean') out.confetti = c.confetti;
+    if (c.wallpaperVideoId && db.prepare("SELECT 1 FROM uploads WHERE id = ? AND user_id = ? AND kind = 'wallvideo'").get(String(c.wallpaperVideoId), me.id)) out.wallpaperVideoId = String(c.wallpaperVideoId);
+    if (old.wallpaperVideoId && old.wallpaperVideoId !== out.wallpaperVideoId) removeFile(old.wallpaperVideoId);
     if (c.wallpaperId && db.prepare("SELECT 1 FROM uploads WHERE id = ? AND user_id = ? AND kind = 'wallpaper'").get(String(c.wallpaperId), me.id)) out.wallpaperId = String(c.wallpaperId);
     if (old.wallpaperId && old.wallpaperId !== out.wallpaperId) removeFile(old.wallpaperId);
     return out;
@@ -1737,16 +1956,17 @@ export function createApp({
     'POST /api/upload': async (req, res, me, url) => {
       needHuman(me);
       const kind = url.searchParams.get('kind');
-      if (!['avatar', 'banner', 'attachment', 'community-icon', 'group-icon', 'post', 'story', 'reel', 'sound', 'wallpaper'].includes(kind)) throw new HttpError(400, 'Unknown upload type.');
+      if (!['avatar', 'banner', 'attachment', 'community-icon', 'group-icon', 'post', 'story', 'reel', 'sound', 'wallpaper', 'wallvideo'].includes(kind)) throw new HttpError(400, 'Unknown upload type.');
       if (limited(`upload:${kind}:${me.id}`, ['attachment', 'post', 'story', 'reel', 'sound'].includes(kind) ? 60 : 10, 3600e3)) throw new HttpError(429, 'Too many uploads. Try again later.');
-      const maxBytes = ({ attachment: 25, post: 10, story: 10, banner: 4, reel: 40, sound: 10, wallpaper: 4 }[kind] ?? 2) * 1024 * 1024;
+      const maxBytes = ({ attachment: 25, post: 10, story: 10, banner: 4, reel: 150, sound: 10, wallpaper: 4, wallvideo: 40 }[kind] ?? 2) * 1024 * 1024;
       const body = await readBytes(req, maxBytes);
       if (!body.length) throw new HttpError(400, 'That file is empty.');
       const label = cleanFileName(url.searchParams.get('name'));
       const mediaId = crypto.randomBytes(16).toString('hex');
-      if (kind === 'reel' || kind === 'sound') {
-        const mimeType = kind === 'reel' ? sniffVideo(body) : sniffAudio(body);
-        if (!mimeType) throw new HttpError(400, kind === 'reel' ? 'Upload an MP4 or WebM video.' : 'Upload an MP3, WAV, OGG, M4A, AAC or FLAC sound.');
+      if (kind === 'reel' || kind === 'sound' || kind === 'wallvideo') {
+        const mimeType = kind === 'sound' ? sniffAudio(body) : sniffVideo(body);
+        if (!mimeType) throw new HttpError(400, kind !== 'sound' ? 'Upload an MP4 or WebM video.' : 'Upload an MP3, WAV, OGG, M4A, AAC or FLAC sound.');
+        if (kind === 'reel' && mimeType === 'video/mp4') { const d = mp4Seconds(body); if (d && d > MAX_VIDEO_SECONDS + 5) throw new HttpError(400, `Videos can be up to ${MAX_VIDEO_SECONDS / 60} minutes. This one is ${Math.round(d)} seconds.`); }
         if (kind === 'sound' && countOf("SELECT COUNT(*) AS n FROM uploads WHERE user_id = ? AND kind = 'sound'", me.id) >= 20) throw new HttpError(409, 'You can keep up to 20 sounds. Delete one first.');
         storeFile(mediaId, body);
         registerUpload(mediaId, me.id, kind, mimeType, body.length, label?.slice(0, 40) ?? null);
@@ -1847,7 +2067,7 @@ export function createApp({
         ORDER BY id DESC LIMIT 50`).all(me.id, me.id, peer.id, peer.id, me.id, before);
       db.prepare('UPDATE messages SET read_at = ? WHERE sender_id = ? AND recipient_id = ? AND read_at IS NULL').run(Date.now(), peer.id, me.id);
       const { is_owner, site_role, ...p } = peer;
-      sendJson(res, 200, { peer: { ...p, avatar: avatarOf(peer.id), tag: tagOf(peer), friend: friendStatus(me.id, peer.id) },
+      sendJson(res, 200, { peer: { ...p, avatar: avatarOf(peer.id), tag: tagOf(peer), clan: clanOf(peer.username), friend: friendStatus(me.id, peer.id) },
         messages: decorate(rows.reverse().map((r) => ({ ...r, mine: !!r.mine })), 'dm', me.id) });
     },
 
@@ -2237,7 +2457,7 @@ export function createApp({
       const isFollowing = !!db.prepare('SELECT 1 FROM follows WHERE follower_id = ? AND followee_id = ?').get(me.id, u.id);
       const self = u.id === me.id;
       sendJson(res, 200, { username: u.username, displayName: u.display_name, bio: p.bio, status: p.status, accent: p.accent, avatar: p.avatar, banner: p.banner, private: !!p.private, interests: JSON.parse(p.interests || '[]'),
-        tag: tagOf(u), friend: self ? 'self' : friendStatus(me.id, u.id), canSee: self || !p.private || isFollowing,
+        tag: tagOf(u), clan: clanOf(u.username), friend: self ? 'self' : friendStatus(me.id, u.id), canSee: self || !p.private || isFollowing,
         requested: !!db.prepare('SELECT 1 FROM follow_requests WHERE follower_id = ? AND followee_id = ?').get(me.id, u.id),
         posts: countOf('SELECT COUNT(*) AS n FROM posts WHERE user_id = ?', u.id), followers: countOf('SELECT COUNT(*) AS n FROM follows WHERE followee_id = ?', u.id),
         following: countOf('SELECT COUNT(*) AS n FROM follows WHERE follower_id = ?', u.id), isFollowing,
@@ -2286,7 +2506,7 @@ export function createApp({
 
     'POST /api/onboarding/done': (req, res, me) => { prefsOf(me.id); db.prepare('UPDATE profiles SET onboarded = 1 WHERE user_id = ?').run(me.id); sendJson(res, 200, { ok: true }); },
 
-    'GET /api/me': (req, res, me) => sendJson(res, 200, { username: me.username, displayName: me.display_name, isOwner: !!me.is_owner, isBot: !!me.is_bot, role: siteRole(me), perms: sitePerms(me), birthday: me.birthday, avatar: avatarOf(me.id),
+    'GET /api/me': (req, res, me) => sendJson(res, 200, { canPickUsername: !db.prepare('SELECT username_set AS s FROM users WHERE id = ?').get(me.id).s, username: me.username, displayName: me.display_name, isOwner: !!me.is_owner, isBot: !!me.is_bot, role: siteRole(me), perms: sitePerms(me), birthday: me.birthday, avatar: avatarOf(me.id),
       ignored: db.prepare('SELECT u.username FROM ignores i JOIN users u ON u.id = i.ignored_id WHERE i.user_id = ?').all(me.id).map((r) => r.username), prefs: prefsOf(me.id), privacy: privacyOf(me.id), sound: soundOf(me.id),
       mutes: db.prepare('SELECT kind, target FROM mutes WHERE user_id = ?').all(me.id), unread: unreadCount(me.id),
       friendRequests: countOf("SELECT COUNT(*) AS n FROM friendships WHERE (a = ? OR b = ?) AND status = 'pending' AND requester != ?", me.id, me.id, me.id) }),
@@ -2431,7 +2651,8 @@ export function createApp({
       if (fresh) {
         const target = greetTarget(scope, id);
         const intro = { sentinel: 'Sentinel is on watch. Blocked messages are logged for moderators.', jukebox: 'Jukebox is here. Use !tracks to see the playlist and !play to start.',
-          greeter: 'Greeter will welcome new people.', funbot: 'Funbot is here. Try !help.' }[bot];
+          greeter: 'Greeter will welcome new people.', funbot: 'Funbot is here. Try !help.', levels: 'Levels is on. Chat to earn XP, then try !rank and !top.',
+          toolkit: 'Toolkit is here: !calc, !time, !remind, !timer, !pick, !password, !countdown.', arcade: 'Arcade is open: !guess, !hangman, !scramble, !tictactoe.', quotebook: 'Quotebook is open. Save one with !quote add text.' }[bot];
         if (target && intro) botSay(target, bot, intro);
       }
       scope === 'community' ? pushCommunity(id) : pushGroup(id, 'group', { id });
@@ -2553,9 +2774,10 @@ export function createApp({
 
 
   const serveStatic = async (res, pathname, viewer) => {
-    if (pathname === '/download/android') {
-      if (!apkUrl || !/^https:\/\//.test(apkUrl)) throw new HttpError(404, 'The Android app has not been published yet.');
-      res.writeHead(302, { Location: apkUrl, 'Cache-Control': 'no-store' });
+    if (pathname === '/download/android' || pathname === '/download/windows') {
+      const target = pathname.endsWith('android') ? apkUrl : exeUrl;
+      if (!target || !/^https:\/\//.test(target)) throw new HttpError(404, `The ${pathname.endsWith('android') ? 'Android' : 'Windows'} app has not been published yet.`);
+      res.writeHead(302, { Location: target, 'Cache-Control': 'no-store' });
       return res.end();
     }
     let file = path.normalize(pathname);
@@ -2615,7 +2837,7 @@ export function createApp({
         const handler = routes[`${req.method} ${url.pathname}`];
         if (!handler) throw new HttpError(404, 'Not found');
         if (req.method !== 'GET' && req.headers['x-requested-with'] !== 'scrxaper') throw new HttpError(403, 'Forbidden');
-        const open = url.pathname === '/api/register' || url.pathname === '/api/login' || url.pathname === '/api/logout';
+        const open = ['/api/register', '/api/login', '/api/logout', '/api/auth/config', '/api/auth/google', '/api/setup'].includes(url.pathname);
         const me = open ? null : currentUser(req);
         if (!open && !me) throw new HttpError(401, 'Sign in required.');
         return await handler(req, res, me, url);

@@ -2,8 +2,8 @@
 // Closed app / locked phone: a service worker cannot play custom audio, so a call is delivered like Discord's: a high-priority push shows
 // a persistent "calling" notification with Answer/Decline, and the server repeats it every 4 s while it rings so the system notification
 // sound and vibration keep ringing. The custom ringtone plays as soon as the app window is awake.
-const CACHE = 'scrxaper-shell-v3';
-const SHELL = ['/app', '/app.css', '/app.js', '/css/calls.css', '/css/social.css', '/css/studio.css', '/js/core.js', '/js/chat.js', '/js/spaces.js', '/js/calls.js', '/js/media.js', '/js/social.js', '/js/studio.js', '/e2ee.js', '/logo.png', '/favicon.png', '/manifest.webmanifest'];
+const CACHE = 'scrxaper-shell-v4';
+const SHELL = ['/app', '/app.css', '/app.js', '/css/calls.css', '/css/social.css', '/css/studio.css', '/css/polish.css', '/js/core.js', '/js/chat.js', '/js/spaces.js', '/js/calls.js', '/js/media.js', '/js/social.js', '/js/studio.js', '/js/setup.js', '/e2ee.js', '/logo.png', '/favicon.png', '/manifest.webmanifest'];
 
 self.addEventListener('install', (e) => { e.waitUntil(caches.open(CACHE).then((c) => Promise.all(SHELL.map((u) => c.add(u).catch(() => {})))).then(() => self.skipWaiting())); });
 self.addEventListener('activate', (e) => { e.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim())); });

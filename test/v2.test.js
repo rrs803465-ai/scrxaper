@@ -221,7 +221,7 @@ test('Sentinel blocks links, words, shouting and floods; Funbot answers commands
   const code = (await t.call('POST', '/api/community-invite', { community: cid }, own)).data.code;
   const ch = (await t.call('GET', `/api/community?id=${cid}`, null, own)).data.channels[0].id;
   assert.equal((await t.call('POST', '/api/bots/install', { scope: 'community', id: cid, bot: 'sentinel' }, mem)).status, 404);
-  assert.equal((await t.call('GET', '/api/bots/catalog?scope=community&id=' + cid, null, own)).data.bots.length, 4);
+  assert.equal((await t.call('GET', '/api/bots/catalog?scope=community&id=' + cid, null, own)).data.bots.length, 8);
   await t.call('POST', '/api/bots/install', { scope: 'community', id: cid, bot: 'sentinel', config: { links: true, words: ['Darn', 'heck'], mentions: 2 } }, own);
   await t.call('POST', '/api/bots/install', { scope: 'community', id: cid, bot: 'funbot' }, own);
   await t.call('POST', '/api/bots/install', { scope: 'community', id: cid, bot: 'greeter', config: { welcome: 'Hello {user}, welcome to {name}!' } }, own);

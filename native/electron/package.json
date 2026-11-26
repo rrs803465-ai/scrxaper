@@ -1,1 +1,21 @@
-{ "name": "scrxaper-desktop", "version": "0.1.0", "main": "main.js", "private": true, "build": { "appId": "app.scrxaper.desktop", "productName": "Scrxaper", "files": ["main.js"] } }
+{
+  "name": "scrxaper-desktop",
+  "version": "1.0.0",
+  "description": "Scrxaper desktop app",
+  "author": "Scrxaper",
+  "main": "main.js",
+  "private": true,
+  "scripts": { "start": "electron .", "dist": "electron-builder --win nsis portable --publish never" },
+  "devDependencies": { "electron": "^33.2.0", "electron-builder": "^25.1.8" },
+  "build": {
+    "appId": "app.scrxaper.desktop",
+    "productName": "Scrxaper",
+    "directories": { "output": "dist" },
+    "files": ["main.js", "preload.js", "connect.html", "config.json", "icon.png", "package.json"],
+    "win": { "icon": "icon.png", "target": ["nsis", "portable"] },
+    "nsis": { "artifactName": "Scrxaper-Setup.${ext}", "oneClick": false, "perMachine": false, "allowToChangeInstallationDirectory": true, "createDesktopShortcut": true, "createStartMenuShortcut": true, "shortcutName": "Scrxaper" },
+    "portable": { "artifactName": "Scrxaper-portable.${ext}" },
+    "mac": { "icon": "icon.png", "target": ["dmg"] },
+    "linux": { "icon": "icon.png", "target": ["AppImage"], "category": "Network" }
+  }
+}

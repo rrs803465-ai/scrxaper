@@ -1,5 +1,5 @@
 // Spaces: the Discord-style server bar, the side pane (DMs + groups, or a community's channels), create/join/discover, community + group management.
-import { $, state, bus, actions, h, clear, icon, sq, setBadge, avatarEl, roleTag, api, toast, fail, ask, openSheet, closeSheets, ago, toggle, select, segmented, form, field, section, hint, row, empty, chip, debounce, pickFile, upload, fileUrl, ICON_NAMES } from './core.js';
+import { $, state, bus, actions, h, clear, icon, sq, setBadge, avatarEl, roleTag, clanChip, TAG_ICONS, api, toast, fail, ask, openSheet, closeSheets, ago, toggle, select, segmented, form, field, section, hint, row, empty, chip, debounce, pickFile, upload, fileUrl, ICON_NAMES } from './core.js';
 import { botPicker } from './studio.js';
 
 const S = { spaces: [], groups: [], convos: [], cdata: null, rooms: new Map(), tab: 'chats', q: '' };
@@ -245,6 +245,22 @@ async function communitySettings(id) {
     return t;
   };
   const admin = RANKS[d.role] >= 2;
+  const c = d.community;
+  const tagBlock = () => {
+    const cur = { icon: c.tagIcon ?? 'bolt', color: c.tagColor ?? '#b7c9e6' };
+    const preview = h('span', {}); const paintPreview = (tag) => clear(preview, clanChip({ tag: (tag || 'TAG').toUpperCase(), icon: cur.icon, color: cur.color, name: c.name }));
+    const input = h('input', { name: 'tag', maxLength: 4, value: c.tag ?? '', placeholder: 'TAG', autocomplete: 'off', 'aria-label': 'Tag letters', class: 'tag-input', oninput: (e) => paintPreview(e.target.value) });
+    const picks = h('div', { class: 'tag-icons', role: 'radiogroup', 'aria-label': 'Tag symbol' }, ...TAG_ICONS.map((n) => h('button', { type: 'button', role: 'radio', 'aria-checked': String(n === cur.icon), 'aria-label': n, title: n, class: `sq${n === cur.icon ? ' on' : ''}`,
+      onclick: (e) => { cur.icon = n; picks.querySelectorAll('button').forEach((b) => { b.classList.toggle('on', b === e.currentTarget); b.setAttribute('aria-checked', String(b === e.currentTarget)); }); paintPreview(input.value); } }, icon(n, 16))));
+    const color = h('input', { type: 'color', value: cur.color, 'aria-label': 'Tag colour', oninput: (e) => { cur.color = e.target.value; paintPreview(input.value); } });
+    paintPreview(c.tag);
+    const wear = c.tag ? h('button', { class: d.wearing ? 'ghost' : 'primary', type: 'button', onclick: () => api('/api/wear-tag', { body: { community: d.wearing ? null : id } }).then(redo).catch(fail) }, icon('crown', 16), d.wearing ? ' Stop wearing this tag' : ' Wear this tag next to my name') : null;
+    return section('Server tag', h('p', { class: 'hint' }, 'A small symbol and up to four letters that members can show next to their name, anywhere on Scrxaper.'),
+      h('div', { class: 'inline' }, preview, wear),
+      ...(admin ? [h('div', { class: 'stack' }, h('div', { class: 'inline' }, input, color), picks,
+        h('div', { class: 'inline' }, h('button', { class: 'primary', type: 'button', onclick: () => act('/api/community-tag', { tag: input.value, icon: cur.icon, color: cur.color }) }, 'Save tag'),
+          c.tag ? h('button', { class: 'ghost', type: 'button', onclick: () => act('/api/community-tag', { tag: '' }) }, 'Remove tag') : null))] : []));
+  };
   clear(sh.body, h('div', { class: 'profile-card' }, h('div', { class: 'pc-info' }, h('div', { class: 'inline' }, avatarEl(d.community.icon, d.community.name, 52, true), h('span', { class: 'grow' }, h('strong', {}, d.community.name), h('br'), h('small', { class: 'hint' }, d.community.description || 'No description yet.')))), h('div', { class: 'inline pc-info' },
     ...(mine >= 2 || d.myPerms.includes('invites') ? [h('button', { class: 'ghost', type: 'button', onclick: async () => { const r = await api('/api/community-invite', { body: { community: id } }); try { await navigator.clipboard.writeText(r.code); toast('Invite code copied (valid 7 days)', { kind: 'ok' }); } catch { ask.prompt('Invite code (valid 7 days)', r.code, { title: 'Invite' }); } } }, icon('link', 16), ' Invite')] : []),
     ...(admin ? [h('button', { class: 'ghost', type: 'button', onclick: () => actions.openBots?.('community', id) }, icon('bot', 16), ' Bots')] : []),
@@ -252,11 +268,12 @@ async function communitySettings(id) {
     section('Channels', ...d.channels.map((c) => row(icon(c.kind === 'voice' ? 'speaker' : c.kind === 'announcement' ? 'bell' : 'hash', 17), h('span', { class: 'grow' }, c.name, h('br'), h('small', {}, [c.kind === 'announcement' && 'announcements', c.readOnly && 'read-only', c.private && 'staff only', c.topic].filter(Boolean).join(' · '))),
       ...(c.kind === 'voice' ? [] : [sq('chat', 'Open', { class: 'sm', onclick: () => { sh.close(); actions.openChannel(c.id); } })]),
       ...(mine >= 2 || d.myPerms.includes('channels') ? [sq('edit', 'Rename', { class: 'sm', onclick: async () => { const n = await ask.prompt('Channel name', c.name, { title: 'Rename channel' }); if (n) api('/api/channel-edit', { body: { channel: c.id, name: n, topic: c.topic } }).then(redo).catch(fail); } }), sq('trash', 'Delete', { class: 'sm', onclick: async () => { if (await ask.confirm(`Delete #${c.name} and its messages?`, { yes: 'Delete', danger: true })) api('/api/channel-delete', { body: { channel: c.id } }).then(redo).catch(fail); } })] : [])))),
-    section(`Members (${d.members.length})`, ...d.members.map((m) => row(Object.assign(avatarEl(m.avatar, m.name, 32), { onclick: () => actions.openProfile?.(m.username) }), h('span', { class: 'grow' }, m.name, roleTag(m.tag), h('br'), h('small', {}, `@${m.username} · ${m.role}${m.customRole ? ` · ${m.customRole}` : ''}${m.timedOut ? ' · timed out' : ''}`)), ...tools(m)))),
+    section(`Members (${d.members.length})`, ...d.members.map((m) => row(Object.assign(avatarEl(m.avatar, m.name, 32), { onclick: () => actions.openProfile?.(m.username) }), h('span', { class: 'grow' }, m.name, roleTag(m.tag), clanChip(m.clan), h('br'), h('small', {}, `@${m.username} · ${m.role}${m.customRole ? ` · ${m.customRole}` : ''}${m.timedOut ? ' · timed out' : ''}`)), ...tools(m)))),
     ...(admin ? [section('Custom roles', ...d.roles.map((r) => row(h('span', { class: 'grow' }, r.name, h('br'), h('small', {}, r.perms.join(', '))), sq('trash', 'Delete role', { class: 'sm', onclick: () => act('/api/community-role-delete', { role: r.id }) }))),
       form((v) => act('/api/community-roles', { name: v.name, perms: PERMS.filter((p) => v[p]) }), h('div', { class: 'stack' }, field('name', 'New role name', { required: true }), h('div', { class: 'inline' }, ...PERMS.map((p) => h('label', { class: 'chip' }, h('input', { type: 'checkbox', name: p }), p.replace('_', ' ')))), h('button', { class: 'ghost', type: 'submit' }, 'Create role')))),
       section('Community profile', form((v) => act('/api/community-settings', { description: v.description, public: !!v.public }), h('div', { class: 'stack' }, field('description', 'Short description', { value: d.community.description ?? '' }), toggle('public', 'Show in Discover', !!d.community.public), h('button', { class: 'primary', type: 'submit' }, 'Save'))),
         h('div', { class: 'inline' }, h('span', { class: 'hint' }, 'Icon'), iconInput(`community-icon&id=${id}`, async () => { await refreshLists(); redo(); })))] : []),
+    tagBlock(),
     section('Manage', h('div', { class: 'inline' }, mine === 3 ? h('button', { class: 'danger', type: 'button', onclick: async () => { if (await ask.confirm('Delete this community and all its messages? This cannot be undone.', { yes: 'Delete', danger: true })) { await api('/api/community-delete', { body: { community: id } }).catch(fail); sh.close(); selectSpace(null); refreshLists(); } } }, 'Delete community')
       : h('button', { class: 'ghost', type: 'button', onclick: async () => { if (await ask.confirm('Leave this community?', { yes: 'Leave', danger: true })) { await api('/api/community-leave', { body: { community: id } }).catch(fail); sh.close(); selectSpace(null); refreshLists(); } } }, 'Leave community'))));
 }
