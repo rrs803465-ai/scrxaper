@@ -1,10 +1,12 @@
 // Conversation pane: header, message log, bubbles, composer, uploads, secret (end-to-end) chats.
-import { $, state, bus, actions, h, clear, icon, sq, avatarEl, roleTag, clanChip, viewImage, downloadFile, api, upload, toast, fail, ask, openSheet, closeSheets, timeOf, dayOf, fmtBytes, fileUrl, linkify, ping, playSound, BUILTIN_TONES, toggle, select, form, field, section, hint, row, empty, debounce } from './core.js';
+import { $, state, bus, actions, h, clear, icon, sq, avatarEl, roleTag, clanChip, fxName, viewImage, downloadFile, api, upload, toast, fail, ask, openSheet, closeSheets, timeOf, dayOf, fmtBytes, fileUrl, linkify, ping, playSound, BUILTIN_TONES, toggle, select, form, field, section, hint, row, empty, debounce } from './core.js';
 import * as e2ee from '../e2ee.js';
 
 const main = () => $('main');
 const view = { kind: null, id: null, data: null, msgs: [], last: null, canPost: true, canModerate: false, secret: false, peerKey: null, name: '', more: false };
 const pending = [];
+let replying = null; // { id, name, body } while writing a reply
+const REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏', '🔥', '🎉', '👀', '✅', '💯', '😍'];
 const DEC = new Map(); // message id -> decrypted text
 let els = {};
 let e2eeReady = null;
@@ -63,6 +65,7 @@ async function open(kind, id) {
     else if (kind === 'group') data = await api(`/api/group-messages?group=${id}`);
     else data = await api(`/api/channel-messages?channel=${id}`);
     if (open.token !== token) return;
+    setReply(null);
     Object.assign(view, { kind, id: kind === 'dm' ? data.peer.username : Number(id), data, msgs: [], last: null, secret: false, peerKey: null });
     view.canPost = kind === 'channel' ? data.canPost : kind === 'dm' ? data.peer.username !== 'scrxaper' && !data.peer.is_system : true;
     view.canModerate = !!data.canModerate;
@@ -113,7 +116,8 @@ function buildPane() {
   els.pend = h('div', { class: 'pending', hidden: true });
   els.err = h('p', { class: 'error thread-error', role: 'alert' });
   els.composer = h('form', { class: 'composer', novalidate: true }, els.attach, els.input, els.send);
-  els.wrap = h('div', { class: 'composer-wrap' }, els.pend, els.composer);
+  els.replybar = h('div', { class: 'replybar', hidden: true });
+  els.wrap = h('div', { class: 'composer-wrap' }, els.replybar, els.pend, els.composer);
   els.drop = h('div', { class: 'dropzone', 'aria-hidden': 'true' }, icon('upload', 28), h('span', {}, 'Drop files to send'));
   els.composer.addEventListener('submit', (e) => { e.preventDefault(); send(); });
   els.input.addEventListener('input', () => { els.input.style.height = 'auto'; els.input.style.height = `${Math.min(els.input.scrollHeight, 140)}px`; sync(); });
@@ -232,7 +236,8 @@ function renderMessage(m, prev) {
   const name = m.name ?? view.data?.peer?.display_name ?? m.from;
   const kindCls = m.kind === 'announcement' ? ' card-announce' : m.kind === 'card' || m.kind === 'birthday' ? ' birthday' : '';
   const body = h('div', { class: `bub${kindCls}` });
-  if (!mine && view.kind !== 'dm') body.append(h('span', { class: 'who', onclick: open }, name, roleTag(m.tag ?? (m.is_bot ? 'bot' : null)), clanChip(m.clan)));
+  if (!mine && view.kind !== 'dm') body.append(h('span', { class: 'who', onclick: open }, fxName(h('span', {}, name), m.nameFx), roleTag(m.tag ?? (m.is_bot ? 'bot' : null)), clanChip(m.clan)));
+  if (m.replyTo) body.append(h('button', { type: 'button', class: 'quote', title: 'Jump to the message', onclick: () => jumpTo(m.replyTo.id) }, h('b', {}, m.replyTo.name), h('span', {}, m.replyTo.body || 'Message')));
   if (m.file) body.append(fileBlock(m));
   else if (m.attachment) body.append(fileBlock({ attachment: m.attachment, file: { kind: 'image', name: 'Attachment', mime: 'image/png', size: 0 } }));
   if (m.kind === 'post' && m.meta) body.append(postCard(m.meta));
@@ -240,8 +245,13 @@ function renderMessage(m, prev) {
   if (m.kind === 'poll' && m.meta) body.append(pollBlock(m));
   if (m.kind === 'e2ee') body.append(secretText(m));
   else if (m.body && m.kind !== 'poll') body.append(h('span', { class: 'txt' }, linkify(m.body)));
-  body.append(h('time', { datetime: new Date(m.at).toISOString() }, m.kind === 'e2ee' ? icon('lock', 11) : null, timeOf(m.at)));
+  if (m.reactions?.length) body.append(h('div', { class: 'reacts' }, ...m.reactions.map((r) => h('button', { type: 'button', class: `react-chip${r.mine ? ' mine' : ''}`, 'aria-pressed': String(!!r.mine), title: r.mine ? 'Remove your reaction' : 'React', onclick: () => react(m, r.e) }, r.e, h('span', {}, String(r.n))))));
+  body.append(h('time', { datetime: new Date(m.at).toISOString() }, m.kind === 'e2ee' ? icon('lock', 11) : null, m.editedAt ? h('i', { class: 'edited', title: `Edited ${timeOf(m.editedAt)}` }, 'edited ') : null, timeOf(m.at)));
   const acts = h('div', { class: 'm-acts' });
+  const real = m.id && m.kind !== 'card' && m.kind !== 'birthday' && m.kind !== 'announcement';
+  if (real && view.canPost) acts.append(sq('smile', 'React', { class: 'ghost', onclick: (e) => pickReaction(m, e.currentTarget) }), sq('reply', 'Reply', { class: 'ghost', onclick: () => setReply(m) }));
+  if (real && mine && m.kind === 'text') acts.append(sq('edit', 'Edit message', { class: 'ghost', onclick: () => editMessage(m) }));
+  if (real && m.kind !== 'e2ee') acts.append(sq('star', 'Save message', { class: 'ghost', onclick: () => api('/api/saved', { body: { scope: view.kind, id: m.id } }).then((r) => toast(r.saved ? 'Saved. Find it in Studio, Saved messages.' : 'Removed from saved')).catch(fail) }));
   if (m.body && m.kind !== 'e2ee') acts.append(sq('file', 'Copy text', { class: 'ghost', onclick: () => navigator.clipboard?.writeText(m.body).then(() => toast('Copied')) }));
   if (view.kind === 'channel' && (mine || view.canModerate)) acts.append(sq('trash', 'Delete message', { class: 'ghost', onclick: async () => { if (await ask.confirm('Delete this message?', { yes: 'Delete', danger: true })) api('/api/channel-message-delete', { body: { channel: view.id, id: m.id } }).catch(fail); } }));
   const del = (kind, path, payload) => acts.append(sq('trash', 'Delete message', { class: 'ghost', onclick: async () => { if (await ask.confirm('Delete this message for everyone?', { yes: 'Delete', danger: true })) api(path, { body: payload }).catch(fail); } }));
@@ -279,6 +289,37 @@ function pollBlock(m) {
     return b;
   }), h('small', { class: 'hint' }, `${total} vote${total === 1 ? '' : 's'}`));
 }
+const react = (m, emoji) => api('/api/react', { body: { scope: view.kind, id: m.id, emoji } }).catch(fail);
+function pickReaction(m, anchor) {
+  document.querySelector('.react-pop')?.remove();
+  const pop = h('div', { class: 'react-pop', role: 'menu', 'aria-label': 'Pick a reaction' }, ...REACTIONS.map((e) => h('button', { type: 'button', role: 'menuitem', 'aria-label': e, onclick: () => { pop.remove(); react(m, e); } }, e)));
+  document.body.append(pop);
+  const r = anchor.getBoundingClientRect(); const w = pop.offsetWidth; const hgt = pop.offsetHeight;
+  pop.style.left = `${Math.max(8, Math.min(innerWidth - w - 8, r.left + r.width / 2 - w / 2))}px`;
+  pop.style.top = `${r.top - hgt - 8 < 8 ? r.bottom + 8 : r.top - hgt - 8}px`;
+  const off = (ev) => { if (ev.type === 'keydown' ? ev.key === 'Escape' : !pop.contains(ev.target)) { pop.remove(); document.removeEventListener('pointerdown', off, true); document.removeEventListener('keydown', off, true); } };
+  setTimeout(() => { document.addEventListener('pointerdown', off, true); document.addEventListener('keydown', off, true); }, 0);
+}
+function setReply(m) {
+  replying = m ? { id: m.id, name: m.name ?? m.from ?? view.name, body: m.kind === 'e2ee' ? 'Encrypted message' : (m.body || (m.file ? m.file.name : 'Attachment')).slice(0, 100) } : null;
+  if (!els.replybar) return;
+  els.replybar.hidden = !replying;
+  clear(els.replybar, ...(replying ? [icon('reply', 16), h('span', { class: 'grow' }, h('b', {}, `Replying to ${replying.name}`), h('small', {}, replying.body)), sq('close', 'Cancel reply', { class: 'sm', onclick: () => setReply(null) })] : []));
+  if (replying) els.input?.focus();
+}
+function jumpTo(id) {
+  const row = els.log?.querySelector(`[data-id="${id}"]`);
+  if (!row) return toast('That message is further back. Scroll up to load it.');
+  row.scrollIntoView({ block: 'center', behavior: 'smooth' }); row.classList.add('flash'); setTimeout(() => row.classList.remove('flash'), 1600);
+}
+function editMessage(m) {
+  const ta = h('textarea', { rows: 4, maxLength: 4000, 'aria-label': 'Message text' }); ta.value = m.body;
+  const err = h('p', { class: 'error', role: 'alert' });
+  const sh = openSheet('Edit message', h('form', { class: 'stack', onsubmit: async (e) => { e.preventDefault(); const t = ta.value.trim(); if (!t) return; if (t === m.body) return sh.close(); try { await api('/api/message-edit', { body: { scope: view.kind, id: m.id, body: t } }); sh.close(); } catch (x) { err.textContent = x.message; } } }, ta, err,
+    h('div', { class: 'dlg-actions' }, h('button', { class: 'ghost', type: 'button', onclick: () => sh.close() }, 'Cancel'), h('button', { class: 'primary', type: 'submit' }, 'Save'))));
+  setTimeout(() => ta.focus(), 50);
+}
+const sameChat = (p) => p.scope === view.kind && (view.kind === 'dm' ? p.peer === view.id : String(view.kind === 'group' ? p.group : p.channel) === String(view.id));
 function replace(m) {
   const old = els.log?.querySelector(`[data-id="${m.id}"]`);
   if (!old) return;
@@ -315,9 +356,10 @@ async function addFiles(files) {
 }
 
 async function post(body, attachment, kind) {
-  if (view.kind === 'dm') return api('/api/messages', { body: { to: view.id, body, attachment, ...(kind ? { kind } : {}) } });
-  if (view.kind === 'group') return api('/api/group-messages', { body: { group: view.id, body, attachment } });
-  return api('/api/channel-messages', { body: { channel: view.id, body, attachment } });
+  const replyTo = replying?.id;
+  if (view.kind === 'dm') return api('/api/messages', { body: { to: view.id, body, attachment, replyTo, ...(kind ? { kind } : {}) } });
+  if (view.kind === 'group') return api('/api/group-messages', { body: { group: view.id, body, attachment, replyTo } });
+  return api('/api/channel-messages', { body: { channel: view.id, body, attachment, replyTo } });
 }
 async function send() {
   if (!view.kind || els.send.disabled) return;
@@ -336,7 +378,7 @@ async function send() {
       if (!files.length) await post(text, null);
       for (const f of files) { await post(first ? text : '', f.id); first = false; }
     }
-    els.input.value = ''; els.input.style.height = 'auto';
+    els.input.value = ''; els.input.style.height = 'auto'; setReply(null);
     pending.splice(0).forEach((p) => p.el.remove()); els.pend.hidden = true;
   } catch (e) { els.err.textContent = e.message; }
   sync();
@@ -366,7 +408,25 @@ function incoming(kind, id, m, label) {
   refresh();
 }
 
+export async function openSaved() {
+  const body = h('div', { class: 'stack' }, h('p', { class: 'hint' }, 'Messages you saved from any chat. They stay here even if the original is deleted.'));
+  const sh = openSheet('Saved messages', body, { key: 'saved', wide: true });
+  const paint = async () => {
+    const { saved } = await api('/api/saved');
+    clear(body, h('p', { class: 'hint' }, 'Messages you saved from any chat. They stay here even if the original is deleted.'),
+      ...(saved.length ? saved.map((x) => h('article', { class: 'saved-item' },
+        h('header', {}, h('b', {}, x.name), h('small', {}, ` in ${x.where} · ${dayOf(x.at)} ${timeOf(x.at)}`)),
+        x.file?.kind === 'image' ? h('img', { class: 'shot', src: fileUrl(x.attachment), alt: x.file.name, loading: 'lazy', onclick: () => viewImage(fileUrl(x.attachment), x.file.name) }) : x.file ? h('a', { class: 'btn ghost', href: fileUrl(x.attachment), download: x.file.name }, icon('download', 16), x.file.name) : null,
+        x.body ? h('p', { class: 'txt' }, linkify(x.body)) : null,
+        h('div', { class: 'inline' }, x.scope !== 'channel' ? h('button', { class: 'ghost', type: 'button', onclick: () => { sh.close(); x.scope === 'dm' ? actions.openDM?.(x.chat) : actions.openGroup?.(x.chat); } }, 'Open chat') : null,
+          h('button', { class: 'ghost', type: 'button', onclick: () => navigator.clipboard?.writeText(x.body).then(() => toast('Copied')) }, 'Copy'),
+          h('button', { class: 'danger', type: 'button', onclick: () => api('/api/saved/delete', { body: { id: x.id } }).then(paint).catch(fail) }, 'Remove')))) : [h('p', { class: 'empty' }, 'Nothing saved yet. Hover a message and tap the star.')]));
+  };
+  paint().catch(fail);
+}
+
 export function initChat() {
+  actions.openSaved = openSaved;
   state.unreadCh = new Set();
   actions.openDM = (u) => { closeSheets(); actions.selectSpace?.(null, { keepView: true }); return open('dm', String(u).toLowerCase()); };
   actions.openGroup = (id) => { closeSheets(); actions.selectSpace?.(null, { keepView: true }); return open('group', id); };
@@ -384,6 +444,14 @@ export function initChat() {
   bus.on('sse:channel-message', (m) => incoming('channel', m.channel, { ...m, mine: m.from === state.user }, m.name));
   bus.on('sse:message-delete', (m) => { if (view.kind === 'dm' && view.id === m.peer) { els.log?.querySelector(`[data-id="${m.id}"]`)?.remove(); view.msgs = view.msgs.filter((x) => x.id !== m.id); } refresh(); });
   bus.on('sse:group-message-delete', (m) => { if (view.kind === 'group' && view.id === m.group) { els.log?.querySelector(`[data-id="${m.id}"]`)?.remove(); view.msgs = view.msgs.filter((x) => x.id !== m.id); } });
+  bus.on('sse:react', (p) => {
+    if (!sameChat(p)) return; const m = view.msgs.find((x) => x.id === p.id); if (!m) return;
+    const list = m.reactions ?? []; let r = list.find((x) => x.e === p.emoji);
+    if (!r) { r = { e: p.emoji, n: 0, mine: false }; list.push(r); }
+    r.n = p.n; if (p.by === state.user) r.mine = p.on;
+    m.reactions = list.filter((x) => x.n > 0); replace(m);
+  });
+  bus.on('sse:message-edit', (p) => { if (!sameChat(p)) return; const m = view.msgs.find((x) => x.id === p.id); if (!m) return; m.body = p.body; m.editedAt = p.editedAt; replace(m); refresh(); });
   bus.on('sse:channel-delete', (m) => { if (view.kind === 'channel' && view.id === m.channel) { els.log?.querySelector(`[data-id="${m.id}"]`)?.remove(); view.msgs = view.msgs.filter((x) => x.id !== m.id); } });
   bus.on('sse:group', (g) => { if (view.kind === 'group' && view.id === g.id) actions.refreshThread?.(); refresh(); });
   bus.on('sse:community', (c) => { if (view.kind === 'channel' && view.data?.channel.communityId === c.id) open('channel', view.id).catch(() => {}); });

@@ -1,4 +1,5 @@
 // Media tooling: music picker, photo editor, video editor, and the post/story/reel composer.
+import { musicSearch } from './music.js';
 import { $, state, actions, h, clear, icon, sq, api, upload, toast, fail, ask, openSheet, pickFile, audioLength, fmtDur, fmtBytes, fileUrl, segmented, toggle } from './core.js';
 
 /* ------------------------------------------------------------------ music picker */
@@ -34,7 +35,8 @@ export function musicPicker({ current = null, reel = false } = {}) {
       const pend = up.querySelector('.pend'); pend.hidden = false;
       try { const d = await upload(`kind=sound&name=${encodeURIComponent(file.name)}`, file, (x) => { bar.style.width = `${Math.round(x * 100)}%`; }); await refresh(); toast('Uploaded', { kind: 'ok' }); select({ id: d.id, title: file.name.replace(/\.[a-z0-9]+$/i, '') }); } catch (e) { fail(e); } finally { pend.hidden = true; }
     }));
-    append(body, [up, detail, list]);
+    const find = h('button', { class: 'primary', type: 'button', onclick: async () => { const t = await musicSearch({ maxSec: 60 }); if (t) { await refresh(); select({ id: t.id, title: t.artist ? `${t.title} - ${t.artist}` : t.title }); } } }, icon('search', 18), ' Search for a song');
+    append(body, [find, up, detail, list]);
     if (current) detail.hidden = true;
     refresh();
   });

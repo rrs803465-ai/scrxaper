@@ -1,5 +1,5 @@
 // Studio (settings), onboarding, site panel, ban notice, premade bots, buddy, shop.
-import { $, state, bus, actions, h, clear, icon, sq, avatarEl, roleTag, api, upload, toast, fail, safe, ask, openSheet, closeSheets, section, hint, row, empty, field, form, toggle, select, segmented, chip, pickFile, audioLength, fmtBytes, fileUrl, playSound, BUILTIN_TONES, CALLING_TUNES, applyPrefs, confetti, debounce, ago } from './core.js';
+import { $, state, bus, actions, h, clear, icon, sq, avatarEl, roleTag, fxName, badgeChip, framed, api, upload, toast, fail, safe, ask, openSheet, closeSheets, section, hint, row, empty, field, form, toggle, select, segmented, chip, pickFile, audioLength, fmtBytes, fileUrl, playSound, BUILTIN_TONES, CALLING_TUNES, applyPrefs, confetti, debounce, ago } from './core.js';
 
 /* ------------------------------------------------------------------ Android app bridge (present only inside the native app) */
 const native = () => (typeof window !== 'undefined' && window.ScrxNative ? window.ScrxNative : null);
@@ -24,7 +24,7 @@ const rawPost = (path, file, host) => new Promise((resolve, reject) => {
 const uploadWithBar = async (query, file, host) => { const bar = h('i', {}); const wrap = h('div', { class: 'bar-big' }, bar); host.append(wrap); try { return await upload(query, file, (x) => { bar.style.width = `${Math.round(x * 100)}%`; }); } finally { wrap.remove(); } };
 
 /* ------------------------------------------------------------------ Studio */
-const TILES = [['profile', 'user', 'Profile'], ['look', 'palette', 'Appearance'], ['sounds', 'music', 'Sounds'], ['calls', 'disc', 'Call screen'], ['privacy', 'lock', 'Privacy'], ['alerts', 'bell', 'Alerts and app'], ['sparks', 'sparkle', 'Sparks and shop'], ['buddy', 'smile', 'Buddy'], ['account', 'key', 'Account']];
+const TILES = [['profile', 'user', 'Profile'], ['look', 'palette', 'Appearance'], ['sounds', 'music', 'Sounds'], ['calls', 'disc', 'Call screen'], ['privacy', 'lock', 'Privacy'], ['alerts', 'bell', 'Alerts and app'], ['sparks', 'sparkle', 'Sparks and shop'], ['saved', 'star', 'Saved messages'], ['buddy', 'smile', 'Buddy'], ['account', 'key', 'Account']];
 let studioSheet = null;
 export function openStudio(sec) {
   const body = h('div', { class: 'stack' });
@@ -33,6 +33,7 @@ export function openStudio(sec) {
     if (!id) { studioSheet.title('Studio'); return clear(body, h('div', { class: 'tiles studio-tiles' }, ...TILES.map(([k, ic, l], i) => h('button', { type: 'button', class: 'tile', style: { '--i': i }, onclick: () => go(k) }, h('span', { class: 'sqicon' }, icon(ic, 26)), l))), ...(state.me.perms?.length ? [h('button', { class: 'item', type: 'button', onclick: () => { closeSheets(); openOwner(); } }, icon('shield', 18), h('span', { class: 't' }, 'Site panel'))] : [])); }
     const [, , label] = TILES.find((t) => t[0] === id);
     if (id === 'buddy') { closeSheets(); return openBuddy(); }
+    if (id === 'saved') { closeSheets(); return actions.openSaved?.(); }
     studioSheet.title(label);
     const back = h('button', { type: 'button', class: 'ghost mini back', onclick: () => go(null) }, icon('back', 16), 'Studio');
     const view = h('div', { class: 'stack' }); clear(body, back, view);
@@ -86,7 +87,7 @@ const SECTIONS = {
       const vol = h('input', { type: 'range', min: 0, max: 100, value: s.volume, 'aria-label': 'Volume' }); vol.addEventListener('change', safe(() => saveSound({ volume: Number(vol.value) })));
       const up = h('div', { class: 'stack' });
       clear(view, pick('Message tone', 'tone', BUILTIN_TONES.filter((t) => t[0] !== 'ring' && t[0] !== 'soft' || true)), pick('Ringtone (when someone calls you)', 'ringtone', BUILTIN_TONES, true), pick('Calling tune (what you hear while calling)', 'callingTune', CALLING_TUNES, true), h('label', { class: 'field' }, 'Volume', vol),
-        section('My sounds', hint('Upload any song up to 10 MB, any length. Use it as a ringtone, calling tune or message tone, or attach it to posts and stories.'), up, ...(mine.length ? mine.map((m) => row(icon('music', 18), h('span', { class: 'grow' }, (m.label || 'sound').replace(/\.[a-z0-9]+$/i, ''), h('small', {}, ` ${fmtBytes(m.size)}`)), sq('play', 'Play', { class: 'sm', onclick: () => { const a = new Audio(fileUrl(m.id)); a.volume = s.volume / 100; a.play().catch(() => {}); setTimeout(() => a.pause(), 8000); } }), sq('trash', 'Delete', { class: 'sm', onclick: safe(async () => { await api('/api/sounds/delete', { body: { id: m.id } }); state.sound = (await api('/api/me')).sound; await paint(); }) }))) : [hint('Nothing uploaded yet.')]), h('button', { class: 'primary', type: 'button', onclick: () => pickFile('audio/*', async (f) => { if (f.size > 10 * 1048576) return toast('That file is over 10 MB.', { kind: 'error' }); try { await uploadWithBar(`kind=sound&name=${encodeURIComponent(f.name)}`, f, up); toast('Uploaded', { kind: 'ok' }); await paint(); } catch (e) { fail(e); } }) }, icon('upload', 16), 'Upload a sound')),
+        section('My sounds', hint('Search for a song, trim the part you like, and use it as a ringtone, calling tune or message tone. You can also import any file from this device.'), h('button', { class: 'primary', type: 'button', onclick: async () => { const t = await musicSearch({ maxSec: 60, purpose: 'ring' }); if (t) { await saveSound({ ringtone: `custom:${t.id}` }); toast('Set as your ringtone', { kind: 'ok' }); paint(); } } }, icon('search', 18), ' Search for a song'), up, ...(mine.length ? mine.map((m) => row(icon('music', 18), h('span', { class: 'grow' }, (m.label || 'sound').replace(/\.[a-z0-9]+$/i, ''), h('small', {}, ` ${fmtBytes(m.size)}`)), sq('play', 'Play', { class: 'sm', onclick: () => { const a = new Audio(fileUrl(m.id)); a.volume = s.volume / 100; a.play().catch(() => {}); setTimeout(() => a.pause(), 8000); } }), sq('trash', 'Delete', { class: 'sm', onclick: safe(async () => { await api('/api/sounds/delete', { body: { id: m.id } }); state.sound = (await api('/api/me')).sound; await paint(); }) }))) : [hint('Nothing uploaded yet.')]), h('button', { class: 'primary', type: 'button', onclick: () => pickFile('audio/*', async (f) => { if (f.size > 10 * 1048576) return toast('That file is over 10 MB.', { kind: 'error' }); try { await uploadWithBar(`kind=sound&name=${encodeURIComponent(f.name)}`, f, up); toast('Uploaded', { kind: 'ok' }); await paint(); } catch (e) { fail(e); } }) }, icon('upload', 16), 'Upload a sound')),
         section('Per person', hint('Open someone’s profile and choose Ringtone for this person to give them their own ring.')));
     };
     await paint();
@@ -142,7 +143,7 @@ const SECTIONS = {
       const d = await api('/api/shop');
       clear(view, h('div', { class: 'wallet' }, icon('sparkle', 26), h('div', {}, h('b', {}, String(d.balance)), h('small', {}, ` ${d.currency}`)), h('button', { class: 'primary mini', type: 'button', onclick: safe(async () => { const r = await api('/api/sparks/daily', { body: {} }); confetti(); toast(`Daily reward claimed. Balance ${r.balance}`, { kind: 'ok' }); paint(); }) }, 'Daily check-in')),
         hint(`Earn ${d.currency} with daily check-ins. Friends can send them to each other from a profile.`),
-        section('Shop', h('div', { class: 'shop' }, ...d.items.map((it) => h('div', { class: `shopitem${it.equipped ? ' on' : ''}` }, h('span', { class: `sqicon prev ${it.kind}-${it.id}` }, icon(it.kind === 'frame' ? 'user' : it.kind === 'title' ? 'crown' : 'star', 22)), h('div', { class: 'grow' }, h('b', {}, it.name), h('small', {}, it.description)),
+        section('Shop', h('div', { class: 'shop' }, ...d.items.map((it) => h('div', { class: `shopitem${it.equipped ? ' on' : ''}` }, shopPreview(it), h('div', { class: 'grow' }, h('b', {}, it.name), h('small', {}, it.description)),
           it.owned ? h('button', { class: it.equipped ? 'ghost mini' : 'primary mini', type: 'button', onclick: safe(async () => { await api(it.equipped ? '/api/shop/unequip' : '/api/shop/equip', { body: it.equipped ? { kind: it.kind } : { item: it.id } }); paint(); }) }, it.equipped ? 'Unequip' : 'Equip')
             : h('button', { class: 'primary mini', type: 'button', onclick: safe(async () => { await api('/api/shop/buy', { body: { item: it.id } }); confetti(); paint(); }) }, `${it.price}`))))),
         ...(d.history.length ? [section('Recent', ...d.history.map((x) => row(h('span', { class: 'grow' }, x.reason), h('b', { class: x.delta < 0 ? 'neg' : 'pos' }, `${x.delta > 0 ? '+' : ''}${x.delta}`))))] : []));
@@ -154,8 +155,9 @@ const SECTIONS = {
   account(view) {
     clear(view, h('div', { class: 'inline' }, avatarEl(state.me.avatar, state.me.displayName, 52), h('div', {}, h('b', {}, state.me.displayName), ' ', roleTag(state.me.role !== 'user' ? state.me.role : null), h('br'), h('small', {}, `@${state.user}`))),
       h('button', { class: 'ghost', type: 'button', onclick: safe(async () => { native()?.stop?.(); await api('/api/logout', { body: {} }); location.href = '/app'; }) }, icon('logout', 16), 'Log out'),
+      section('Your data', hint('Download a copy of your account, messages, posts and saved messages as one JSON file.'), h('a', { class: 'btn ghost', href: '/api/export', download: `scrxaper-${state.user}-export.json` }, icon('download', 16), ' Download my data')),
       section('Delete account', hint('Removes your account, posts, messages and files. This cannot be undone. Communities you own must be deleted first.'),
-        h('button', { class: 'danger', type: 'button', onclick: async () => { const pw = await ask.prompt('Enter your password to confirm.', '', { title: 'Delete account', type: 'password' }); if (!pw) return; await safe(async () => { await api('/api/account/delete', { body: { password: pw } }); location.href = '/'; })(); } }, icon('trash', 16), 'Delete my account')));
+        h('button', { class: 'danger', type: 'button', onclick: async () => { const pw = await (state.me.google ? ask.prompt('Type your username to confirm.', '', { title: 'Delete account' }) : ask.prompt('Enter your password to confirm.', '', { title: 'Delete account', type: 'password' })); if (!pw) return; await safe(async () => { await api('/api/account/delete', { body: { password: pw } }); location.href = '/'; })(); } }, icon('trash', 16), 'Delete my account')));
   },
 };
 let deferredInstall = null;
@@ -281,4 +283,11 @@ export function init() {
   Object.assign(actions, { openStudio, runOnboarding, showBanned, openOwner, openBots, openBuddy });
   bus.on('sse:banned', (e) => { native()?.stop?.(); showBanned(e); });
   if (native()) { try { native().start(); } catch { /* old app build */ } }
+}
+
+import { musicSearch } from './music.js';
+function shopPreview(it) {
+  if (it.kind === 'frame') return framed(h('span', { class: 'prev-av' }, avatarEl(null, state.user ?? 'A', 36)), it.value);
+  if (it.kind === 'name_color') return h('span', { class: 'prev-txt' }, fxName(h('b', {}, 'Aa'), it.value));
+  return h('span', { class: 'prev-txt' }, badgeChip(it.value));
 }

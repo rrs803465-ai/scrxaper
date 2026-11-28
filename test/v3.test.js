@@ -201,3 +201,60 @@ test('download links redirect to APK_URL / EXE_URL and 404 when unset', async ()
   assert.match((await fetch(`${on.base}/download/windows`, { redirect: 'manual' })).headers.get('location'), /Scrxaper-Setup\.exe$/);
   assert.equal((await fetch(`${on.base}/download/windows`, { redirect: 'manual' })).status, 302);
 });
+
+test('reactions, replies and edits work in DMs, groups and channels, and strangers cannot touch them', async () => {
+  const { call, join } = await boot();
+  const a = await join('rxaa'); const b = await join('rxbb'); const x = await join('rxxx');
+  const dm = (await call('POST', '/api/messages', { to: 'rxbb', body: 'first' }, a)).data;
+  const rep = (await call('POST', '/api/messages', { to: 'rxaa', body: 'second', replyTo: dm.id }, b)).data;
+  let log = (await call('GET', '/api/messages?with=rxbb', null, a)).data.messages;
+  assert.equal(log.find((m) => m.id === rep.id).replyTo.body, 'first');
+  assert.equal((await call('POST', '/api/react', { scope: 'dm', id: dm.id, emoji: '🔥' }, x)).status, 404);
+  assert.equal((await call('POST', '/api/react', { scope: 'dm', id: dm.id, emoji: 'x' }, a)).status, 400);
+  assert.deepEqual((await call('POST', '/api/react', { scope: 'dm', id: dm.id, emoji: '🔥' }, a)).data.n, 1);
+  await call('POST', '/api/react', { scope: 'dm', id: dm.id, emoji: '🔥' }, b);
+  log = (await call('GET', '/api/messages?with=rxbb', null, a)).data.messages;
+  assert.deepEqual(log.find((m) => m.id === dm.id).reactions, [{ e: '🔥', n: 2, mine: true }]);
+  assert.equal((await call('POST', '/api/react', { scope: 'dm', id: dm.id, emoji: '🔥' }, b)).data.on, false);
+  assert.equal((await call('POST', '/api/message-edit', { scope: 'dm', id: dm.id, body: 'first!' }, b)).status, 403);
+  assert.equal((await call('POST', '/api/message-edit', { scope: 'dm', id: dm.id, body: 'first!' }, a)).status, 200);
+  assert.ok((await call('GET', '/api/messages?with=rxaa', null, b)).data.messages.find((m) => m.id === dm.id).editedAt);
+  // a reply cannot point at another conversation
+  const other = (await call('POST', '/api/messages', { to: 'rxxx', body: 'private', }, a)).data;
+  const bad = (await call('POST', '/api/messages', { to: 'rxbb', body: 'sneaky', replyTo: other.id }, a)).data;
+  assert.equal((await call('GET', '/api/messages?with=rxbb', null, a)).data.messages.find((m) => m.id === bad.id).replyTo, undefined);
+  // groups
+  const gid = (await call('POST', '/api/groups', { name: 'Rx', members: ['rxbb'] }, a)).data.id;
+  const gm = (await call('POST', '/api/group-messages', { group: gid, body: 'hello group' }, a)).data;
+  assert.equal((await call('POST', '/api/react', { scope: 'group', id: gm.id, emoji: '🎉' }, x)).status, 404);
+  assert.equal((await call('POST', '/api/react', { scope: 'group', id: gm.id, emoji: '🎉' }, b)).status, 200);
+  const gr = (await call('POST', '/api/group-messages', { group: gid, body: 'replying', replyTo: gm.id }, b)).data;
+  const glog = (await call('GET', `/api/group-messages?group=${gid}`, null, a)).data.messages;
+  assert.equal(glog.find((m) => m.id === gr.id).replyTo.name.length > 0, true);
+  assert.equal(glog.find((m) => m.id === gm.id).reactions[0].e, '🎉');
+});
+
+test('saved messages keep a copy, even if the original is deleted; export lists them', async () => {
+  const { call, join, base } = await boot();
+  const a = await join('svaa'); const b = await join('svbb');
+  const m = (await call('POST', '/api/messages', { to: 'svbb', body: 'remember this address' }, a)).data;
+  assert.equal((await call('POST', '/api/saved', { scope: 'dm', id: m.id }, b)).data.saved, true);
+  await call('POST', '/api/message-delete', { with: 'svbb', id: m.id }, a);
+  const list = (await call('GET', '/api/saved', null, b)).data.saved;
+  assert.equal(list.length, 1); assert.equal(list[0].body, 'remember this address'); assert.equal(list[0].username, 'svaa');
+  const ex = await fetch(base + '/api/export', { headers: { Cookie: b } });
+  assert.match(ex.headers.get('content-disposition'), /attachment; filename="scrxaper-svbb-export\.json"/);
+  const dump = await ex.json();
+  assert.equal(dump.saved[0].body, 'remember this address'); assert.equal(dump.account.username, 'svbb');
+  assert.equal((await call('POST', '/api/saved/delete', { id: list[0].id }, b)).status, 200);
+  assert.equal((await call('GET', '/api/saved', null, b)).data.saved.length, 0);
+});
+
+test('a Google account can delete itself by typing its username', async () => {
+  const sbs = await fakeSupabase();
+  const { call } = await boot({ supabaseUrl: sbs.url, supabaseKey: 'k' });
+  const r = await call('POST', '/api/auth/google', { accessToken: 'good'.padEnd(24, '_') });
+  const c = r.headers.get('set-cookie').split(';')[0];
+  assert.equal((await call('POST', '/api/account/delete', { password: 'nope' }, c)).status, 403);
+  assert.equal((await call('POST', '/api/account/delete', { password: 'ada_lovelace' }, c)).status, 200);
+});

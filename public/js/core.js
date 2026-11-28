@@ -60,7 +60,7 @@ const P = {
   search: 'M11 4a7 7 0 100 14 7 7 0 000-14zM16 16l4 4', more: 'M5 12h.01M12 12h.01M19 12h.01', heart: 'M12 20S4 15 4 9.500A4.500 4.500 0 0112 7a4.500 4.500 0 018 2.500C20 15 12 20 12 20z',
   comment: 'M4 5h16v11H11l-4 4v-4H4z', share: 'M13 4l7 7-7 7v-4c-6 0-9 2-9 5 0-6 3-10 9-11z', music: 'M9 18V6l10-2v12M9 18a3 3 0 11-3-3 3 3 0 013 3zM19 16a3 3 0 11-3-3 3 3 0 013 3z',
   play: 'M7 5l12 7-12 7z', pause: 'M7 5h3v14H7zM14 5h3v14h-3z', skip: 'M6 5l9 7-9 7zM18 5v14', check: 'M5 12l5 5 9-10', trash: 'M5 7h14M10 7V4h4v3M7 7l1 13h8l1-13',
-  edit: 'M4 20l1-4L16 5l3 3L8 19z', link: 'M10 14a4 4 0 005.500 0l3-3a4 4 0 00-5.500-5.500L12 7M14 10a4 4 0 00-5.500 0l-3 3a4 4 0 005.500 5.500L12 17', image: 'M4 5h16v14H4zM4 16l5-5 4 4 3-3 4 4M9 9h.01',
+  reply: 'M9 8L4 13l5 5M4 13h10a6 6 0 016 6', edit: 'M4 20l1-4L16 5l3 3L8 19z', link: 'M10 14a4 4 0 005.500 0l3-3a4 4 0 00-5.500-5.500L12 7M14 10a4 4 0 00-5.500 0l-3 3a4 4 0 005.500 5.500L12 17', image: 'M4 5h16v14H4zM4 16l5-5 4 4 3-3 4 4M9 9h.01',
   file: 'M6 3h8l4 4v14H6zM14 3v4h4', download: 'M12 4v11M7 11l5 5 5-5M5 20h14', star: 'M12 4l2.400 5 5.600.7-4 4 1 5.600L12 16.500 7 19.300l1-5.600-4-4 5.600-.7z', crown: 'M4 8l4 4 4-6 4 6 4-4-2 11H6z',
   user: 'M12 12a4 4 0 100-8 4 4 0 000 8zM5 20c0-4 3-6 7-6s7 2 7 6', userplus: 'M10 12a4 4 0 100-8 4 4 0 000 8zM3 20c0-4 3-6 7-6s5 1 6 2M19 8v6M16 11h6', ban: 'M12 3a9 9 0 100 18 9 9 0 000-18zM6 6l12 12',
   key: 'M8 14a4 4 0 110-8 4 4 0 010 8zM11 11l9 9M16 16l2-2', moon: 'M20 14A8 8 0 0110 4a8 8 0 1010 10z', drag: 'M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01',
@@ -122,6 +122,11 @@ export const avatarEl = (id, name, size = 36, square = false) => {
   return node;
 };
 export const nameEl = (p) => { const n = h('span', { class: 'nm' }, p.name ?? p.displayName ?? p.username); return n; };
+// Cosmetics: a name colour is a hex (solid) or a keyword (animated gradient); a frame is a keyword.
+export const fxName = (node, value) => { if (!value) return node; node.classList.add('fxn'); if (String(value).startsWith('#')) node.style.setProperty('--fxn', value); else node.classList.add(`fxn-${String(value).replace(/[^a-z]/g, '')}`); return node; };
+export const BADGE_ICONS = { Butterfly: 'wave', Star: 'star', Flame: 'flame', Crown: 'crown' };
+export const badgeChip = (value) => (value ? h('span', { class: 'fxbadge', title: `${value} badge (cosmetic)` }, icon(BADGE_ICONS[value] ?? 'sparkle', 12), value) : null);
+export const framed = (node, frame) => { node.classList.add('fxframe'); if (frame) node.classList.add(`fx-${String(frame).replace(/[^a-z]/g, '')}`); return node; };
 export const TAG_ICONS = ['square', 'circle', 'triangle', 'diamond', 'hex', 'bolt', 'star', 'moon', 'leaf', 'flame', 'drop', 'shield', 'crown', 'skull', 'heart', 'eye', 'wave', 'cross'];
 // Server tag, like Discord's: a small symbol and up to four letters, in the server's colour.
 export const clanChip = (clan) => (clan?.tag ? h('span', { class: 'clan', title: `Member of ${clan.name}`, style: clan.color ? { '--clan': clan.color } : {} }, icon(TAG_ICONS.includes(clan.icon) ? clan.icon : 'square', 11), clan.tag) : null);

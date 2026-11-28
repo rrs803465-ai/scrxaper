@@ -1,5 +1,6 @@
 // Social: feed, reels, stories, posts, explore, tags, profiles, sharing, notifications, friends.
-import { $, state, bus, actions, h, clear, icon, sq, avatarEl, roleTag, clanChip, downloadFile, viewImage, api, upload, toast, fail, safe, ask, openSheet, closeSheets, section, hint, empty, field, form, linkify, ago, confetti, fileUrl, debounce, fmtBytes, setBadge, segmented, select } from './core.js';
+import { $, state, bus, actions, h, clear, icon, sq, avatarEl, roleTag, clanChip, fxName, badgeChip, framed, downloadFile, viewImage, api, upload, toast, fail, safe, ask, openSheet, closeSheets, section, hint, empty, field, form, linkify, ago, confetti, fileUrl, debounce, fmtBytes, setBadge, segmented, select } from './core.js';
+import { musicSearch } from './music.js';
 import { musicPicker, editImage, editVideo, newPost, newStory, newReel } from './media.js';
 
 const motionOK = () => document.documentElement.dataset.motion !== 'reduced';
@@ -203,7 +204,8 @@ export async function openProfile(username) {
   const body = h('div', { class: 'profile' });
   const sh = openSheet(self ? 'Your profile' : p.displayName, body, { key: `profile:${name}`, wide: true });
   const paint = async () => {
-    const cos = p.cosmetics?.find((c) => c.kind === 'frame');
+    const fx = (k) => p.cosmetics?.find((c) => c.kind === k)?.value ?? null;
+    const cos = fx('frame');
     const banner = h('div', { class: 'p-banner' }, p.banner ? h('img', { src: fileUrl(p.banner), alt: '' }) : null);
     const stats = h('div', { class: 'p-stats' }, ...[['Posts', p.posts], ['Followers', p.followers], ['Following', p.following]].map(([l, n]) => h('div', {}, h('b', {}, String(n)), h('small', {}, l))));
     const actionsRow = h('div', { class: 'p-actions' });
@@ -237,7 +239,7 @@ export async function openProfile(username) {
         if (ot.length) tools.push(section('Site tools', h('div', { class: 'inline wrap' }, ...ot)));
       }
     }
-    clear(body, banner, h('div', { class: 'p-head' }, h('span', { class: `p-av${cos ? ` frame-${cos.id}` : ''}` }, avatarEl(p.avatar, p.displayName, 92)), h('div', { class: 'grow' }, h('h3', {}, p.displayName, ' ', roleTag(p.tag), clanChip(p.clan), p.private ? h('span', { class: 'chip' }, icon('lock', 12), ' Private') : null), h('small', {}, `@${p.username}`), p.status ? h('p', { class: 'status' }, p.status) : null)),
+    clear(body, banner, h('div', { class: 'p-head' }, framed(h('span', { class: 'p-av' }, avatarEl(p.avatar, p.displayName, 92)), cos), h('div', { class: 'grow' }, h('h3', {}, fxName(h('span', {}, p.displayName), fx('name_color')), ' ', roleTag(p.tag), clanChip(p.clan), badgeChip(fx('badge')), p.private ? h('span', { class: 'chip' }, icon('lock', 12), ' Private') : null), h('small', {}, `@${p.username}`), p.status ? h('p', { class: 'status' }, p.status) : null)),
       p.bio ? h('p', { class: 'bio' }, ...linkify(p.bio)) : null, p.interests?.length ? h('div', { class: 'inline wrap' }, ...p.interests.map((i) => h('span', { class: 'chip' }, i))) : null,
       p.badges?.length ? h('div', { class: 'inline wrap badges' }, ...p.badges.map((b) => h('span', { class: 'chip badge', title: b.description }, icon('star', 12), ` ${b.name}`))) : null, stats, actionsRow, ...tools,
       lockd ?? h('div', { class: 'stack' }, h('div', { class: 'side-label' }, 'Posts'), h('div', { class: 'ph' }, 'Loading')));
@@ -249,7 +251,7 @@ async function ringPick(p) {
   const s = state.sound; const mine = await api('/api/sounds').catch(() => []);
   const cur = s.overrides?.find((o) => o.kind === 'ring' && o.target === p.username)?.tone ?? 'default';
   const opts = [['default', 'Default ringtone'], ['ring', 'Classic ring'], ['soft', 'Soft ring'], ['pulse', 'Pulse'], ['chime', 'Chime'], ...mine.map((m) => [`custom:${m.id}`, m.label || 'My sound'])];
-  const sh = openSheet(`Ringtone for ${p.displayName}`, h('div', { class: 'stack' }, hint('Plays when this person calls you. Upload longer songs in Studio, Sounds.'), select('tone', cur, opts, safe(async (v) => { state.sound = await api('/api/sound/override', { body: { kind: 'ring', target: p.username, tone: v } }); toast('Saved', { kind: 'ok' }); })), h('button', { class: 'ghost', type: 'button', onclick: () => sh.close() }, 'Done')));
+  const sh = openSheet(`Ringtone for ${p.displayName}`, h('div', { class: 'stack' }, hint('Plays when this person calls you. Search for a song and trim it, or pick one you saved.'), h('button', { class: 'primary', type: 'button', onclick: async () => { const t = await musicSearch({ maxSec: 30, purpose: 'ring' }); if (t) { state.sound = await api('/api/sound/override', { body: { kind: 'ring', target: p.username, tone: `custom:${t.id}` } }); toast('Ringtone set', { kind: 'ok' }); sh.close(); } } }, icon('search', 18), ' Search for a song'), select('tone', cur, opts, safe(async (v) => { state.sound = await api('/api/sound/override', { body: { kind: 'ring', target: p.username, tone: v } }); toast('Saved', { kind: 'ok' }); })), h('button', { class: 'ghost', type: 'button', onclick: () => sh.close() }, 'Done')));
 }
 actions.openProfile = openProfile;
 

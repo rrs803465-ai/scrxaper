@@ -37,6 +37,9 @@ Copy `.env.example` for configuration. Set `OWNER_USERNAME` and `OWNER_PASSWORD`
 | Server tags | Admins give a community a tag: a small symbol and up to four letters in a colour. Members can wear it next to their name in chats and on their profile. |
 | Delete messages | Delete your own DMs and group messages (group admins can delete any); community channels already had delete. Everyone in the chat sees it vanish. |
 | Image download | Download button on chat images, in the image viewer and on every post. |
+| Reactions, replies, edits | React with 12 emoji, reply with a quoted message you can jump back to, and edit your own text messages (shown as "edited"). Works in DMs, groups and community channels, live for everyone. |
+| Saved messages | Star any message to keep a copy in Studio, Saved messages, even if the original is deleted. Up to 500. |
+| Your data | Studio, Account, Download my data: one JSON file with your account, messages, posts and saved messages. Google accounts can delete themselves by typing their username. |
 | Bots | Eight premade bots: Sentinel, Jukebox, Greeter, Funbot, plus Levels (XP and leaderboard), Toolkit (calculator, reminders, timers), Arcade (guess, hangman, scramble, tic-tac-toe) and Quotebook. |
 
 ## Calls when the screen is off
@@ -70,7 +73,7 @@ The server checks every token with Supabase before it creates a session, and Goo
 
 ## Verification status
 
-- Server: 14 test files, all passing (`node --test test/<file>`), including a real encrypted Web Push delivery and the ring-pulse behaviour.
+- Server: 14 test files (the newest, `test/v3.test.js`, covers Google, setup, tags, bots, reactions, replies, edits, saved messages and export), all passing (`node --test test/<file>`), including a real encrypted Web Push delivery and the ring-pulse behaviour.
 - Client: exercised in headless Chromium against the real server: sign-up and onboarding, chat, communities with premade bots and Jukebox upload, feed, posts, likes, comments, hashtags, explore, stories with music, reels, share-to-chat, friend requests, notifications, every Studio section, ban popup, owner panel, landing page, a real two-browser WebRTC call with the callee-only visual and the bottom call-ended pill, a three-person voice channel. Desktop 1280x800 and mobile 390x844, no console errors, no horizontal overflow.
 - Service worker: registration checked in Chromium; the push handler's notification options were checked against a mock, not a real push service.
 
@@ -84,3 +87,13 @@ The server checks every token with Supabase before it creates a session, and Goo
 - The Android app (`android/`) compiles on GitHub Actions but has not been run on a real phone. The Windows app (`native/electron/`) has not been built or run: its code is syntax-checked only, and the first real build happens in Actions.
 - Google sign-in is tested against a stand-in Supabase server, not a live Supabase project.
 - Buddy needs each person's own Groq key.
+
+## Music search and ringtones
+
+Search for a song (Studio, Sounds, Search for a song; also in the music picker for posts, stories and reels, and under Ringtone for this person), drag the waveform to pick the part you like, and save it as one of your sounds. Importing a file from your device still works and opens the same trimmer.
+
+Sources are free and need no key: iTunes Search (30 second previews) and Audius (full tracks). The server proxies both, so nothing extra is needed in the browser. Clips are cut in the browser and stored as small mono WAV files, kept for the owner's personal use (ringtones, posts). Optional overrides: `MUSIC_ITUNES_URL`, `MUSIC_AUDIUS_URL`.
+
+## Profile effects
+
+Frames, name colours and badges from the shop now render on the profile, and name colours also show on chat messages in groups and channels.

@@ -6,8 +6,9 @@ import { init as initCalls } from './js/calls.js';
 import { init as initSocial } from './js/social.js';
 import { init as initStudio } from './js/studio.js';
 import { runSetup } from './js/setup.js';
+import { startFx } from './js/fx.js';
 
-const EVENTS = ['message', 'channel-message', 'channel-delete', 'message-delete', 'group-message-delete', 'community', 'group', 'friend', 'notification', 'call', 'room', 'room-ring', 'room-signal', 'music', 'poll', 'banned'];
+const EVENTS = ['message', 'channel-message', 'channel-delete', 'message-delete', 'group-message-delete', 'react', 'message-edit', 'community', 'group', 'friend', 'notification', 'call', 'room', 'room-ring', 'room-signal', 'music', 'poll', 'banned'];
 let es = null;
 const LAUNCH = new URLSearchParams(location.search); // read before the URL is cleaned
 
@@ -25,6 +26,7 @@ async function enterApp(me, { fresh = false } = {}) {
   hide(); // the splash must not sit on top of onboarding
   history.replaceState(null, '', '/app');
   initChat(); initSpaces();
+  startFx();
   for (const init of [initCalls, initSocial, initStudio]) { try { await init(); } catch (e) { console.error('module init failed', e); } }
   paintTabbar();
   await refreshLists().catch(() => {});

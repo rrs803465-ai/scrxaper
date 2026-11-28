@@ -331,7 +331,7 @@ export function createApp({
   const freshOnboard = addCol('profiles', 'onboarded', 'INTEGER NOT NULL DEFAULT 0');
   if (freshOnboard) { db.exec('UPDATE profiles SET onboarded = 1'); db.exec('INSERT OR IGNORE INTO profiles (user_id, onboarded) SELECT id, 1 FROM users'); }
   addCol('community_members', 'position', 'INTEGER NOT NULL DEFAULT 0');
-  for (const [t, c, d] of [['users', 'email', 'TEXT'], ['users', 'auth_id', 'TEXT'], ['users', 'username_set', 'INTEGER NOT NULL DEFAULT 1'], ['communities', 'tag', 'TEXT'], ['communities', 'tag_icon', 'TEXT'], ['communities', 'tag_color', 'TEXT'], ['profiles', 'worn_tag', 'INTEGER'],
+  for (const [t, c, d] of [['messages', 'reply_to', 'INTEGER'], ['messages', 'edited_at', 'INTEGER'], ['group_messages', 'reply_to', 'INTEGER'], ['group_messages', 'edited_at', 'INTEGER'], ['channel_messages', 'reply_to', 'INTEGER'], ['channel_messages', 'edited_at', 'INTEGER'], ['users', 'email', 'TEXT'], ['users', 'auth_id', 'TEXT'], ['users', 'username_set', 'INTEGER NOT NULL DEFAULT 1'], ['communities', 'tag', 'TEXT'], ['communities', 'tag_icon', 'TEXT'], ['communities', 'tag_color', 'TEXT'], ['profiles', 'worn_tag', 'INTEGER'],
     ['profiles', 'private', 'INTEGER NOT NULL DEFAULT 0'], ['profiles', 'interests', "TEXT NOT NULL DEFAULT '[]'"], ['profiles', 'custom', "TEXT NOT NULL DEFAULT '{}'"],
     ['profiles', 'calling_tune', "TEXT NOT NULL DEFAULT 'ringback'"], ['profiles', 'viz_style', "TEXT NOT NULL DEFAULT 'ring'"], ['profiles', 'viz_color', 'TEXT'],
     ['posts', 'music_id', 'TEXT'], ['posts', 'music_title', 'TEXT'], ['posts', 'music_start', 'INTEGER NOT NULL DEFAULT 0'], ['posts', 'music_mute', 'INTEGER NOT NULL DEFAULT 0'],
@@ -375,6 +375,14 @@ export function createApp({
       user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, key_id TEXT NOT NULL, jwk TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (user_id, key_id)
     );
     CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS reactions (
+      scope TEXT NOT NULL, msg_id INTEGER NOT NULL, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, emoji TEXT NOT NULL,
+      PRIMARY KEY (scope, msg_id, user_id, emoji)
+    );
+    CREATE TABLE IF NOT EXISTS saved (
+      id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, scope TEXT NOT NULL, msg_id INTEGER NOT NULL,
+      snap TEXT NOT NULL, created_at INTEGER NOT NULL, UNIQUE (user_id, scope, msg_id)
+    );
     CREATE TABLE IF NOT EXISTS bot_xp (
       scope TEXT NOT NULL, scope_id INTEGER NOT NULL, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       xp INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (scope, scope_id, user_id)
@@ -404,7 +412,19 @@ export function createApp({
     ['frame_aurora', 'frame', 'Aurora halo', 'A soft glow in your accent colour.', 150, 'aurora'],
     ['name_sky', 'name_color', 'Sky name', 'Your name in pale sky blue.', 80, '#b7c9e6'],
     ['name_rose', 'name_color', 'Rose name', 'Your name in muted rose.', 80, '#e3a7bd'],
-    ['badge_butterfly', 'badge', 'Butterfly', 'A cosmetic butterfly badge. Not an official badge.', 200, 'Butterfly']].forEach((i) => seedItem.run(...i));
+    ['badge_butterfly', 'badge', 'Butterfly', 'A cosmetic butterfly badge. Not an official badge.', 200, 'Butterfly'],
+    ['frame_neon', 'frame', 'Neon edge', 'A crisp neon outline that hums.', 220, 'neon'],
+    ['frame_gold', 'frame', 'Gilded', 'A slow-shimmering gold ring.', 320, 'gold'],
+    ['frame_rainbow', 'frame', 'Prism spin', 'A rotating spectrum around your avatar.', 450, 'rainbow'],
+    ['frame_pulse', 'frame', 'Heartbeat', 'A soft pulse in your accent colour.', 180, 'pulse'],
+    ['name_gold', 'name_color', 'Gold name', 'Your name in warm gold.', 120, '#e8c46a'],
+    ['name_mint', 'name_color', 'Mint name', 'Your name in fresh mint.', 80, '#9ad9c0'],
+    ['name_violet', 'name_color', 'Violet name', 'Your name in soft violet.', 80, '#c3a8f0'],
+    ['name_aurora', 'name_color', 'Aurora name', 'A drifting gradient across your name.', 300, 'aurora'],
+    ['name_flame', 'name_color', 'Flame name', 'A warm animated gradient on your name.', 300, 'flame'],
+    ['badge_star', 'badge', 'Star', 'A cosmetic star badge. Not an official badge.', 150, 'Star'],
+    ['badge_flame', 'badge', 'Flame', 'A cosmetic flame badge. Not an official badge.', 150, 'Flame'],
+    ['badge_crown', 'badge', 'Crown', 'A cosmetic crown badge. Not an official badge.', 400, 'Crown']].forEach((i) => seedItem.run(...i));
   const seedBadge = db.prepare('INSERT OR REPLACE INTO badges (id, name, description) VALUES (?, ?, ?)');
   seedBadge.run('early', 'Early member', 'One of the first 100 people to join Scrxaper.');
   seedBadge.run('owner', 'Owner', 'Owns and runs this Scrxaper instance.');
@@ -624,10 +644,59 @@ export function createApp({
       JOIN community_members cm ON cm.community_id = c.id AND cm.user_id = u.id WHERE u.username = ? AND c.tag IS NOT NULL`).get(String(username ?? ''));
     return r ?? null;
   };
+  const MUSIC = { itunes: (process.env.MUSIC_ITUNES_URL || 'https://itunes.apple.com').replace(/\/$/, ''), audius: (process.env.MUSIC_AUDIUS_URL || 'https://api.audius.co').replace(/\/$/, ''), test: !!process.env.MUSIC_ITUNES_URL };
+  const musicCache = new Map();
+  const nameFxOf = (username) => db.prepare(`SELECT i.value FROM equipped e JOIN items i ON i.id = e.item_id JOIN users u ON u.id = e.user_id WHERE u.username = ? AND e.kind = 'name_color'`).get(String(username ?? ''))?.value ?? null;
+  const msgCtx = (me, scope, id) => {
+    const t = MSG[scope];
+    if (!t) throw new HttpError(400, 'Unknown chat type.');
+    const row = db.prepare(`SELECT * FROM ${t} WHERE id = ?`).get(Number(id));
+    if (!row) throw new HttpError(404, 'No such message.');
+    if (scope === 'dm') {
+      if (row.sender_id !== me.id && row.recipient_id !== me.id) throw new HttpError(404, 'No such message.');
+      const peer = db.prepare('SELECT id, username, display_name FROM users WHERE id = ?').get(row.sender_id === me.id ? row.recipient_id : row.sender_id);
+      return { row, where: `Chat with ${peer.display_name}`, chat: peer.username, notify: (ev, p) => { push(me.id, ev, { ...p, peer: peer.username }); push(peer.id, ev, { ...p, peer: me.username }); } };
+    }
+    if (scope === 'group') {
+      needMember(me, row.group_id);
+      return { row, where: db.prepare('SELECT name FROM groups WHERE id = ?').get(row.group_id).name, chat: String(row.group_id), notify: (ev, p) => pushGroup(row.group_id, ev, { ...p, group: row.group_id }) };
+    }
+    const { ch } = channelAccess(me, row.channel_id);
+    return { row, where: `#${ch.name}`, chat: String(ch.id), notify: (ev, p) => pushChannel(ch, ev, { ...p, channel: ch.id }) };
+  };
+  const MSG = { dm: 'messages', group: 'group_messages', channel: 'channel_messages' };
+  const REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏', '🔥', '🎉', '👀', '✅', '💯', '😍'];
+  const snippet = (r) => (r.kind === 'e2ee' ? 'Encrypted message' : String(r.body || (r.attachment_id ? 'Attachment' : '')).slice(0, 100));
+  // The message a reply points at, checked to be in the same conversation. Returns null when it is not.
+  const replyOf = (scope, replyId, a, b) => {
+    if (!replyId) return null;
+    const sel = `SELECT m.id, m.body, m.kind, m.attachment_id, u.display_name AS name FROM ${MSG[scope]} m JOIN users u ON u.id = m.sender_id WHERE m.id = ?`;
+    const r = scope === 'dm' ? db.prepare(`${sel} AND ((m.sender_id = ? AND m.recipient_id = ?) OR (m.sender_id = ? AND m.recipient_id = ?))`).get(Number(replyId), a, b, b, a)
+      : db.prepare(`${sel} AND m.${scope === 'group' ? 'group_id' : 'channel_id'} = ?`).get(Number(replyId), a);
+    return r ? { id: r.id, name: r.name, body: snippet(r) } : null;
+  };
+  const reactionsOf = (scope, ids, uid) => {
+    const map = new Map();
+    if (!ids.length) return map;
+    for (const r of db.prepare(`SELECT msg_id, emoji, COUNT(*) AS n, MAX(user_id = ?) AS mine FROM reactions WHERE scope = ? AND msg_id IN (${ids.map(() => '?').join(',')}) GROUP BY msg_id, emoji ORDER BY MIN(rowid)`).all(uid, scope, ...ids))
+      (map.get(r.msg_id) ?? map.set(r.msg_id, []).get(r.msg_id)).push({ e: r.emoji, n: r.n, mine: !!r.mine });
+    return map;
+  };
   const decorate = (rows, scope, uid) => {
+    const ids = rows.map((r) => r.id);
+    const extra = new Map(ids.length ? db.prepare(`SELECT id, reply_to, edited_at FROM ${MSG[scope]} WHERE id IN (${ids.map(() => '?').join(',')})`).all(...ids).map((r) => [r.id, r]) : []);
+    const replyIds = [...new Set([...extra.values()].map((x) => x.reply_to).filter(Boolean))];
+    const replies = new Map(replyIds.length ? db.prepare(`SELECT m.id, m.body, m.kind, m.attachment_id, u.display_name AS name FROM ${MSG[scope]} m JOIN users u ON u.id = m.sender_id WHERE m.id IN (${replyIds.map(() => '?').join(',')})`).all(...replyIds).map((r) => [r.id, { id: r.id, name: r.name, body: snippet(r) }]) : []);
+    const reacts = reactionsOf(scope, ids, uid);
+    return decorateBase(rows, scope, uid).map((o) => {
+      const x = extra.get(o.id);
+      return { ...o, ...(x?.edited_at ? { editedAt: x.edited_at } : {}), ...(x?.reply_to && replies.get(x.reply_to) ? { replyTo: replies.get(x.reply_to) } : {}), ...(reacts.has(o.id) ? { reactions: reacts.get(o.id) } : {}) };
+    });
+  };
+  const decorateBase = (rows, scope, uid) => {
     const files = fileInfo(rows.filter((r) => r.attachment).map((r) => r.attachment));
     return rows.map((r) => {
-      const out = { ...r, tag: r.tag ?? tagOf(r), file: r.attachment ? files.get(r.attachment) ?? null : null, ...(r.from ? { clan: clanOf(r.from) } : {}) };
+      const out = { ...r, tag: r.tag ?? tagOf(r), file: r.attachment ? files.get(r.attachment) ?? null : null, ...(r.from ? { clan: clanOf(r.from), nameFx: nameFxOf(r.from) } : {}) };
       delete out.is_owner; delete out.site_role; delete out.is_bot; delete out.meta;
       if (r.meta) {
         out.meta = JSON.parse(r.meta);
@@ -644,23 +713,27 @@ export function createApp({
   const SENDER = 'u.username AS "from", u.display_name AS name, (SELECT avatar_id FROM profiles WHERE user_id = u.id) AS avatar, u.is_owner, u.site_role, u.is_bot';
   const dmPayload = (id, sender, peer, text, at, att, kind, meta) => ({ id, from: sender.username, name: sender.display_name, body: text, at, attachment: att, kind, tag: tagOf(sender), clan: clanOf(sender.username), ...(meta ? { meta: JSON.parse(meta) } : {}), ...(att ? { file: fileInfo([att]).get(att) } : {}) });
 
-  const insertDm = (sender, peer, text, { att = null, kind = 'text', meta = null } = {}) => {
+  const insertDm = (sender, peer, text, { att = null, kind = 'text', meta = null, reply = null } = {}) => {
     const at = Date.now();
     const metaJson = meta ? JSON.stringify(meta) : null;
     const id = Number(db.prepare('INSERT INTO messages (sender_id, recipient_id, body, created_at, attachment_id, kind, meta) VALUES (?, ?, ?, ?, ?, ?, ?)').run(sender.id, peer.id, text, at, att, kind, metaJson).lastInsertRowid);
-    const payload = dmPayload(id, sender, peer, text, at, att, kind, metaJson);
+    const rep = replyOf('dm', reply, sender.id, peer.id);
+    if (rep) db.prepare('UPDATE messages SET reply_to = ? WHERE id = ?').run(rep.id, id);
+    const payload = { ...dmPayload(id, sender, peer, text, at, att, kind, metaJson), ...(rep ? { replyTo: rep } : {}) };
     push(peer.id, 'message', payload);
     push(sender.id, 'message', { ...payload, to: peer.username });
     const body = kind === 'e2ee' ? 'Encrypted message' : kind === 'post' ? 'Shared a post' : text || (att ? 'Sent a file' : '');
     pushQuiet(peer.id, { t: 'msg', from: sender.username, name: sender.display_name, body: String(body).slice(0, 120), tag: `dm:${sender.username}` }, `dm:${sender.username}`);
     return payload;
   };
-  const insertGroup = (gid, senderId, text, { att = null, kind = 'text', meta = null } = {}) => {
+  const insertGroup = (gid, senderId, text, { att = null, kind = 'text', meta = null, reply = null } = {}) => {
     const at = Date.now();
     const u = db.prepare('SELECT username, display_name, is_owner, site_role, is_bot FROM users WHERE id = ?').get(senderId);
     const metaJson = meta ? JSON.stringify(meta) : null;
     const id = Number(db.prepare('INSERT INTO group_messages (group_id, sender_id, body, created_at, attachment_id, kind, meta) VALUES (?, ?, ?, ?, ?, ?, ?)').run(gid, senderId, text, at, att, kind, metaJson).lastInsertRowid);
-    const payload = { id, group: Number(gid), from: u.username, name: u.display_name, avatar: avatarOf(senderId), body: text, at, attachment: att, kind, tag: tagOf(u), clan: clanOf(u.username),
+    const rep = replyOf('group', reply, Number(gid));
+    if (rep) db.prepare('UPDATE group_messages SET reply_to = ? WHERE id = ?').run(rep.id, id);
+    const payload = { id, ...(rep ? { replyTo: rep } : {}), group: Number(gid), from: u.username, name: u.display_name, avatar: avatarOf(senderId), body: text, at, attachment: att, kind, tag: tagOf(u), clan: clanOf(u.username),
       ...(meta ? { meta: kind === 'poll' ? { ...meta, counts: meta.options.map(() => 0), mine: null } : meta } : {}), ...(att ? { file: fileInfo([att]).get(att) } : {}) };
     pushGroup(gid, 'message', payload);
     const g = db.prepare('SELECT name FROM groups WHERE id = ?').get(gid);
@@ -668,12 +741,14 @@ export function createApp({
       pushQuiet(user_id, { t: 'msg', from: u.username, name: g?.name ?? u.display_name, body: `${u.display_name}: ${String(text || 'Sent a file').slice(0, 100)}`, tag: `group:${gid}` }, `group:${gid}`);
     return payload;
   };
-  const insertChannel = (ch, senderId, text, { att = null, kind = 'text', meta = null } = {}) => {
+  const insertChannel = (ch, senderId, text, { att = null, kind = 'text', meta = null, reply = null } = {}) => {
     const at = Date.now();
     const u = db.prepare('SELECT username, display_name, is_owner, site_role, is_bot FROM users WHERE id = ?').get(senderId);
     const metaJson = meta ? JSON.stringify(meta) : null;
     const id = Number(db.prepare('INSERT INTO channel_messages (channel_id, sender_id, body, created_at, attachment_id, kind, meta) VALUES (?, ?, ?, ?, ?, ?, ?)').run(ch.id, senderId, text, at, att, kind, metaJson).lastInsertRowid);
-    const payload = { id, channel: ch.id, from: u.username, name: u.display_name, avatar: avatarOf(senderId), body: text, at, attachment: att, kind, tag: tagOf(u), clan: clanOf(u.username),
+    const rep = replyOf('channel', reply, ch.id);
+    if (rep) db.prepare('UPDATE channel_messages SET reply_to = ? WHERE id = ?').run(rep.id, id);
+    const payload = { id, ...(rep ? { replyTo: rep } : {}), channel: ch.id, from: u.username, name: u.display_name, avatar: avatarOf(senderId), body: text, at, attachment: att, kind, tag: tagOf(u), clan: clanOf(u.username),
       ...(meta ? { meta: kind === 'poll' ? { ...meta, counts: meta.options.map(() => 0), mine: null } : meta } : {}), ...(att ? { file: fileInfo([att]).get(att) } : {}) };
     pushChannel(ch, 'channel-message', payload);
     return payload;
@@ -1122,6 +1197,77 @@ export function createApp({
       sendJson(res, 200, { clan: clanOf(me.username) });
     },
 
+    'POST /api/react': async (req, res, me) => {
+      const { scope, id, emoji } = await readJson(req);
+      if (!REACTIONS.includes(emoji)) throw new HttpError(400, 'Pick one of the reaction emoji.');
+      const c = msgCtx(me, scope, id);
+      if (limited(`react:${me.id}`, 40, 10000)) throw new HttpError(429, 'Slow down a little.');
+      const has = db.prepare('SELECT 1 FROM reactions WHERE scope = ? AND msg_id = ? AND user_id = ? AND emoji = ?').get(scope, c.row.id, me.id, emoji);
+      if (has) db.prepare('DELETE FROM reactions WHERE scope = ? AND msg_id = ? AND user_id = ? AND emoji = ?').run(scope, c.row.id, me.id, emoji);
+      else {
+        if (countOf('SELECT COUNT(DISTINCT emoji) AS n FROM reactions WHERE scope = ? AND msg_id = ?', scope, c.row.id) >= 12) throw new HttpError(409, 'That message has plenty of reactions already.');
+        db.prepare('INSERT INTO reactions (scope, msg_id, user_id, emoji) VALUES (?, ?, ?, ?)').run(scope, c.row.id, me.id, emoji);
+      }
+      const n = countOf('SELECT COUNT(*) AS n FROM reactions WHERE scope = ? AND msg_id = ? AND emoji = ?', scope, c.row.id, emoji);
+      c.notify('react', { scope, id: c.row.id, emoji, n, by: me.username, on: !has });
+      sendJson(res, 200, { id: c.row.id, emoji, n, on: !has });
+    },
+
+    'POST /api/message-edit': async (req, res, me) => {
+      const { scope, id, body } = await readJson(req);
+      const c = msgCtx(me, scope, id);
+      if (c.row.sender_id !== me.id) throw new HttpError(403, 'You can only edit your own messages.');
+      if (c.row.kind !== 'text') throw new HttpError(400, 'Only plain text messages can be edited.');
+      const text = String(body ?? '').trim();
+      if (!text || text.length > 4000) throw new HttpError(400, 'Messages need 1–4000 characters.');
+      const at = Date.now();
+      db.prepare(`UPDATE ${MSG[scope]} SET body = ?, edited_at = ? WHERE id = ?`).run(text, at, c.row.id);
+      c.notify('message-edit', { scope, id: c.row.id, body: text, editedAt: at });
+      sendJson(res, 200, { id: c.row.id, body: text, editedAt: at });
+    },
+
+    'POST /api/saved': async (req, res, me) => {
+      const { scope, id } = await readJson(req);
+      const c = msgCtx(me, scope, id);
+      const had = db.prepare('SELECT id FROM saved WHERE user_id = ? AND scope = ? AND msg_id = ?').get(me.id, scope, c.row.id);
+      if (had) { db.prepare('DELETE FROM saved WHERE id = ?').run(had.id); return sendJson(res, 200, { saved: false }); }
+      if (countOf('SELECT COUNT(*) AS n FROM saved WHERE user_id = ?', me.id) >= 500) throw new HttpError(409, 'You have 500 saved messages. Remove some first.');
+      if (c.row.kind === 'e2ee') throw new HttpError(400, 'Secret messages cannot be saved.');
+      const who = db.prepare('SELECT display_name, username FROM users WHERE id = ?').get(c.row.sender_id);
+      const snap = { name: who.display_name, username: who.username, body: String(c.row.body ?? '').slice(0, 4000), at: c.row.created_at, attachment: c.row.attachment_id ?? null, where: c.where, scope, chat: c.chat };
+      db.prepare('INSERT INTO saved (user_id, scope, msg_id, snap, created_at) VALUES (?, ?, ?, ?, ?)').run(me.id, scope, c.row.id, JSON.stringify(snap), Date.now());
+      sendJson(res, 200, { saved: true });
+    },
+
+    'GET /api/saved': (req, res, me) => {
+      const rows = db.prepare('SELECT id, scope, msg_id AS msgId, snap, created_at AS savedAt FROM saved WHERE user_id = ? ORDER BY id DESC LIMIT 500').all(me.id);
+      const files = fileInfo(rows.map((r) => JSON.parse(r.snap).attachment).filter(Boolean));
+      sendJson(res, 200, { saved: rows.map((r) => { const s2 = JSON.parse(r.snap); return { id: r.id, scope: r.scope, msgId: r.msgId, savedAt: r.savedAt, ...s2, file: s2.attachment ? files.get(s2.attachment) ?? null : null }; }) });
+    },
+
+    'POST /api/saved/delete': async (req, res, me) => {
+      const { id } = await readJson(req);
+      db.prepare('DELETE FROM saved WHERE id = ? AND user_id = ?').run(Number(id), me.id);
+      sendJson(res, 200, { ok: true });
+    },
+
+    'GET /api/export': (req, res, me) => {
+      const u = db.prepare('SELECT username, display_name, email, birthday, created_at FROM users WHERE id = ?').get(me.id);
+      const dump = {
+        exportedAt: new Date().toISOString(), account: u, profile: db.prepare('SELECT * FROM profiles WHERE user_id = ?').get(me.id) ?? null,
+        friends: db.prepare("SELECT u.username FROM friendships f JOIN users u ON u.id = CASE WHEN f.a = ? THEN f.b ELSE f.a END WHERE (f.a = ? OR f.b = ?) AND f.status = 'accepted'").all(me.id, me.id, me.id).map((r) => r.username),
+        directMessages: db.prepare(`SELECT m.id, su.username AS "from", ru.username AS "to", m.body, m.kind, m.created_at AS at FROM messages m JOIN users su ON su.id = m.sender_id JOIN users ru ON ru.id = m.recipient_id
+          WHERE m.sender_id = ? OR m.recipient_id = ? ORDER BY m.id`).all(me.id, me.id),
+        groupMessagesIWrote: db.prepare('SELECT x.id, g.name AS "group", x.body, x.created_at AS at FROM group_messages x JOIN groups g ON g.id = x.group_id WHERE x.sender_id = ? ORDER BY x.id').all(me.id),
+        channelMessagesIWrote: db.prepare('SELECT x.id, c.name AS channel, co.name AS community, x.body, x.created_at AS at FROM channel_messages x JOIN channels c ON c.id = x.channel_id JOIN communities co ON co.id = c.community_id WHERE x.sender_id = ? ORDER BY x.id').all(me.id),
+        posts: db.prepare('SELECT id, kind, caption, created_at AS at FROM posts WHERE user_id = ? ORDER BY id').all(me.id),
+        saved: db.prepare('SELECT scope, snap, created_at AS at FROM saved WHERE user_id = ? ORDER BY id').all(me.id).map((r) => ({ ...JSON.parse(r.snap), savedAt: r.at })),
+        note: 'Secret chats are included as encrypted text. Photos, videos and files are not inside this file.',
+      };
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Disposition': `attachment; filename="scrxaper-${me.username}-export.json"`, 'Cache-Control': 'no-store' });
+      res.end(JSON.stringify(dump, null, 2));
+    },
+
     'POST /api/message-delete': async (req, res, me) => {
       const { id, with: to } = await readJson(req);
       const peer = findPeer(me, to);
@@ -1307,7 +1453,8 @@ export function createApp({
       if (me.is_bot || me.is_owner || me.site_role === 'admin') throw new HttpError(403, 'This account cannot be deleted here.');
       const { password } = await readJson(req);
       const row = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(me.id);
-      if (typeof password !== 'string' || !checkPassword(password, row.password_hash)) throw new HttpError(403, 'Wrong password.');
+      const noPassword = !String(row.password_hash).includes(':'); // Google accounts have none: they confirm by typing their username
+      if (noPassword ? String(password ?? '').trim().toLowerCase() !== me.username : (typeof password !== 'string' || !checkPassword(password, row.password_hash))) throw new HttpError(403, noPassword ? 'Type your username to confirm.' : 'Wrong password.');
       if (countOf("SELECT COUNT(*) AS n FROM community_members WHERE user_id = ? AND role = 'owner'", me.id)) throw new HttpError(409, 'Delete the communities you own first.');
       const files = db.prepare('SELECT id FROM uploads WHERE user_id = ?').all(me.id);
       tx(() => {
@@ -2026,6 +2173,61 @@ export function createApp({
       sendJson(res, 200, soundOf(me.id));
     },
 
+    // Music search: iTunes (30 s previews) and Audius (full tracks, free). Both are proxied so the browser stays on our origin.
+    'GET /api/music/search': async (req, res, me, url) => {
+      const q = String(url.searchParams.get('q') ?? '').trim().slice(0, 80);
+      if (q.length < 2) return sendJson(res, 200, { tracks: [] });
+      if (limited(`music:${me.id}`, 90, 10 * 60e3)) throw new HttpError(429, 'Slow down a little.');
+      const ck = q.toLowerCase();
+      const hit = musicCache.get(ck);
+      if (hit && hit.at > Date.now() - 600e3) return sendJson(res, 200, { tracks: hit.tracks });
+      const tracks = [];
+      const jobs = [
+        (async () => {
+          const r = await fetch(`${MUSIC.itunes}/search?${new URLSearchParams({ term: q, media: 'music', entity: 'song', limit: '15' })}`, { signal: AbortSignal.timeout(6000) });
+          if (!r.ok) return;
+          for (const t of (await r.json()).results ?? []) if (t.previewUrl && /^https:\/\//.test(t.previewUrl) || (MUSIC.test && t.previewUrl)) {
+            tracks.push({ source: 'itunes', ref: String(t.previewUrl), title: String(t.trackName ?? '').slice(0, 90), artist: String(t.artistName ?? '').slice(0, 60), art: String(t.artworkUrl100 ?? ''), seconds: Math.round((t.trackTimeMillis ?? 30000) / 1000), full: false });
+          }
+        })(),
+        (async () => {
+          const r = await fetch(`${MUSIC.audius}/v1/tracks/search?${new URLSearchParams({ query: q, app_name: 'scrxaper', limit: '15' })}`, { signal: AbortSignal.timeout(6000) });
+          if (!r.ok) return;
+          for (const t of (await r.json()).data ?? []) if (t.id && /^[A-Za-z0-9]{2,16}$/.test(String(t.id))) {
+            tracks.push({ source: 'audius', ref: String(t.id), title: String(t.title ?? '').slice(0, 90), artist: String(t.user?.name ?? '').slice(0, 60), art: String(t.artwork?.['150x150'] ?? ''), seconds: Math.round(t.duration ?? 0), full: true });
+          }
+        })(),
+      ];
+      await Promise.allSettled(jobs);
+      // Interleave so both catalogues show up near the top.
+      const a = tracks.filter((t) => t.source === 'audius'); const b = tracks.filter((t) => t.source === 'itunes'); const mixed = [];
+      for (let i = 0; i < Math.max(a.length, b.length); i++) { if (b[i]) mixed.push(b[i]); if (a[i]) mixed.push(a[i]); }
+      if (musicCache.size > 200) musicCache.clear();
+      musicCache.set(ck, { at: Date.now(), tracks: mixed });
+      sendJson(res, 200, { tracks: mixed });
+    },
+
+    // Streams the audio so the browser can preview it and cut a clip. Only the two catalogues are reachable.
+    'GET /api/music/stream': async (req, res, me, url) => {
+      const source = url.searchParams.get('source'); const ref = String(url.searchParams.get('ref') ?? '');
+      if (limited(`musicstream:${me.id}`, 120, 10 * 60e3)) throw new HttpError(429, 'Slow down a little.');
+      let target;
+      if (source === 'audius' && /^[A-Za-z0-9]{2,16}$/.test(ref)) target = `${MUSIC.audius}/v1/tracks/${ref}/stream?app_name=scrxaper`;
+      else if (source === 'itunes') {
+        let u; try { u = new URL(ref); } catch { throw new HttpError(400, 'Bad track.'); }
+        if (!(u.protocol === 'https:' && /(^|\.)mzstatic\.com$/.test(u.hostname)) && !(MUSIC.test && u.origin === new URL(MUSIC.itunes).origin)) throw new HttpError(400, 'That source is not allowed.');
+        target = u.href;
+      } else throw new HttpError(400, 'Bad track.');
+      const up = await fetch(target, { redirect: 'follow', signal: AbortSignal.timeout(20000) }).catch(() => null);
+      if (!up?.ok) throw new HttpError(502, 'That track is not available right now.');
+      const bytes = Buffer.from(await up.arrayBuffer());
+      if (bytes.length > 25 * 1024 * 1024) throw new HttpError(413, 'That track is too large.');
+      const type = sniffAudio(bytes);
+      if (!type) throw new HttpError(502, 'That track could not be read.');
+      res.writeHead(200, { 'Content-Type': type, 'Content-Length': bytes.length, 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'private, max-age=1800' });
+      res.end(bytes);
+    },
+
     'GET /api/music/library': (req, res, me) => {
       const rows = db.prepare(`SELECT music_id AS id, music_title AS title, u.display_name AS by, MAX(p.at) AS at FROM (
           SELECT id, user_id, music_id, music_title, created_at AS at FROM posts WHERE music_id IS NOT NULL
@@ -2072,7 +2274,7 @@ export function createApp({
     },
 
     'POST /api/messages': async (req, res, me) => {
-      const { to, body, attachment, kind: wanted } = await readJson(req);
+      const { to, body, attachment, kind: wanted, replyTo } = await readJson(req);
       const peer = findPeer(me, to);
       const text = String(body ?? '').trim();
       const att = attachmentOf(me, attachment);
@@ -2086,7 +2288,7 @@ export function createApp({
       if (isBlocked(me.id, peer.id)) throw new HttpError(403, "You can't message this user.");
       if (!canMessage(me.id, peer.id)) throw new HttpError(403, "This person isn't accepting messages from you.");
       if (limited(`dm:${me.id}`, 60, 10000)) throw new HttpError(429, 'Slow down a little.');
-      const p = insertDm(me, peer, text, { att, kind: secret ? 'e2ee' : 'text' });
+      const p = insertDm(me, peer, text, { att, kind: secret ? 'e2ee' : 'text', reply: replyTo });
       sendJson(res, 201, { id: p.id, body: text, at: p.at, mine: true });
     },
 
@@ -2103,14 +2305,14 @@ export function createApp({
     },
 
     'POST /api/group-messages': async (req, res, me) => {
-      const { group, body, attachment } = await readJson(req);
+      const { group, body, attachment, replyTo } = await readJson(req);
       const role = needMember(me, group);
       const text = String(body ?? '').trim();
       const att = attachmentOf(me, attachment);
       if ((!text && !att) || text.length > 4000) throw new HttpError(400, 'Messages need 1–4000 characters.');
       if (limited(`grp:${me.id}`, 30, 10000)) throw new HttpError(429, 'Slow down a little.');
       gateMessage('group', group, me, text, role === 'admin');
-      const p = insertGroup(Number(group), me.id, text, { att });
+      const p = insertGroup(Number(group), me.id, text, { att, reply: replyTo });
       afterMessage('group', group, { scope: 'group', id: Number(group) }, me, text);
       sendJson(res, 201, { id: p.id });
     },
@@ -2125,7 +2327,7 @@ export function createApp({
     },
 
     'POST /api/channel-messages': async (req, res, me) => {
-      const { channel, body, attachment } = await readJson(req);
+      const { channel, body, attachment, replyTo } = await readJson(req);
       const { ch, m } = channelAccess(me, channel);
       if (ch.kind === 'voice') throw new HttpError(400, 'This is a voice channel. Join it to talk.');
       if (!canPost(ch, m)) throw new HttpError(403, 'Only admins can post in this channel.');
@@ -2135,7 +2337,7 @@ export function createApp({
       if ((!text && !att) || text.length > 4000) throw new HttpError(400, 'Messages need 1–4000 characters.');
       if (limited(`chan:${me.id}`, 20, 10000)) throw new HttpError(429, 'Slow down a little.');
       gateMessage('community', ch.community_id, me, text, rankOf(m) >= 1);
-      const p = insertChannel(ch, me.id, text, { att });
+      const p = insertChannel(ch, me.id, text, { att, reply: replyTo });
       afterMessage('community', ch.community_id, { scope: 'community', id: ch.id, ch }, me, text);
       sendJson(res, 201, { id: p.id });
     },
@@ -2506,7 +2708,7 @@ export function createApp({
 
     'POST /api/onboarding/done': (req, res, me) => { prefsOf(me.id); db.prepare('UPDATE profiles SET onboarded = 1 WHERE user_id = ?').run(me.id); sendJson(res, 200, { ok: true }); },
 
-    'GET /api/me': (req, res, me) => sendJson(res, 200, { canPickUsername: !db.prepare('SELECT username_set AS s FROM users WHERE id = ?').get(me.id).s, username: me.username, displayName: me.display_name, isOwner: !!me.is_owner, isBot: !!me.is_bot, role: siteRole(me), perms: sitePerms(me), birthday: me.birthday, avatar: avatarOf(me.id),
+    'GET /api/me': (req, res, me) => sendJson(res, 200, { google: db.prepare('SELECT auth_id FROM users WHERE id = ?').get(me.id).auth_id != null, canPickUsername: !db.prepare('SELECT username_set AS s FROM users WHERE id = ?').get(me.id).s, username: me.username, displayName: me.display_name, isOwner: !!me.is_owner, isBot: !!me.is_bot, role: siteRole(me), perms: sitePerms(me), birthday: me.birthday, avatar: avatarOf(me.id),
       ignored: db.prepare('SELECT u.username FROM ignores i JOIN users u ON u.id = i.ignored_id WHERE i.user_id = ?').all(me.id).map((r) => r.username), prefs: prefsOf(me.id), privacy: privacyOf(me.id), sound: soundOf(me.id),
       mutes: db.prepare('SELECT kind, target FROM mutes WHERE user_id = ?').all(me.id), unread: unreadCount(me.id),
       friendRequests: countOf("SELECT COUNT(*) AS n FROM friendships WHERE (a = ? OR b = ?) AND status = 'pending' AND requester != ?", me.id, me.id, me.id) }),
